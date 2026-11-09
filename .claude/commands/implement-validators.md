@@ -145,8 +145,8 @@ Use `TestValidate(...)` and `ShouldHaveValidationErrorFor(x => x.Prop)`.
 ## 5. Verify
 
 ```bash
-dotnet build SmartTask.sln
-dotnet test SmartTask.sln
+dotnet build SmartTask.slnx
+dotnet test SmartTask.slnx
 ```
 
 Self-check, report ✅/❌:

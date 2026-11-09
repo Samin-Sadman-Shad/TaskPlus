@@ -32,7 +32,9 @@ extension methods and a small in-house CQRS dispatcher or plain handler classes.
 ## 3. Architecture (Clean Architecture)
 
 ```
-SmartTask.sln
+<repo root>
+├── SmartTask.slnx                 # solution file (lives at the repo root)
+├── Directory.Build.props          # shared build settings for every project
 ├── src/
 │   ├── SmartTask.Domain/          # Entities, enums, value rules, domain exceptions. NO dependencies.
 │   ├── SmartTask.Application/     # Use cases (CQRS), DTOs, validators, contracts (interfaces).
@@ -52,6 +54,11 @@ SmartTask.sln
 │   └── SmartTask.Application.UnitTests/
 └── client/smart-task-web/         # Angular app
 ```
+
+**Layout rule:** the solution file, `Directory.Build.props`, `src/` and `tests/` sit directly at the
+repo root. Do not nest them in another folder. Every production project goes in
+`src/<ProjectName>/` and every test project goes in `tests/<ProjectName>/`. Add each one to `SmartTask.slnx`
+under the matching `/src/` or `/tests/` solution folder. Run all `dotnet` commands from the repo root.
 
 **Dependency rule (never violate):**
 `Domain ← Application ← Persistence / Infrastructure ← Api`
@@ -116,8 +123,8 @@ How to work with the commands: `docs/WORKFLOW.md`. Progress is tracked in `docs/
 ## 7. Useful commands
 
 ```bash
-dotnet build SmartTask.sln
-dotnet test SmartTask.sln
+dotnet build SmartTask.slnx
+dotnet test SmartTask.slnx
 dotnet ef migrations add <Name> -p src/SmartTask.Persistence -s src/SmartTask.Api
 dotnet ef database update      -p src/SmartTask.Persistence -s src/SmartTask.Api
 cd client/smart-task-web && npm start

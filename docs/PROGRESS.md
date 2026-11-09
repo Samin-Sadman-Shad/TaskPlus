@@ -19,8 +19,16 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Open questions / follow-ups: …
 -->
 
+### 2026-11-10 — Restructure: solution moved to repo root
+- Moved `TaskPlus/SmartTask.slnx`, `TaskPlus/Directory.Build.props`, `TaskPlus/src/` and `TaskPlus/tests/`
+  to the repo root, then deleted the `TaskPlus/` folder (including its `.vs/` cache).
+- Updated: `SmartTask.slnx` (removed the stale commented-out `TaskPlus.csproj` entry);
+  `CLAUDE.md` (root layout in §3 plus a layout rule; `SmartTask.sln` → `SmartTask.slnx`);
+  `.claude/commands/*.md` (`SmartTask.sln` → `SmartTask.slnx`; `create-domain` now creates an `slnx`).
+- New projects go in `src/<Project>/` and test projects in `tests/<Project>/`.
+
 ### 2026-11-10 — /create-domain (all)
-- Solution root is `TaskPlus/` (existing `TaskPlus/SmartTask.slnx`); paths below are relative to it.
+- Paths are relative to the repo root. The solution was later moved from `TaskPlus/` to the root (see the restructure entry above).
 - Created: `Directory.Build.props`;
   `src/SmartTask.Domain/` — `Common/` (BaseEntity, AuditableEntity, ISoftDeletable, internal Guard),
   `Constants/` (User, Project, TaskItem, Paging, Ai, RefreshToken constraints),
@@ -43,6 +51,4 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Open questions / follow-ups:
   - "DueDate not in the past on create" and "assignee must be a project member" need the clock or project data,
     so they are left to the validators/handlers.
-  - `TaskPlus/src/TaskPlus.csproj` (template Web API, commented out of the solution) sits in a folder that is a
-    parent of `src/SmartTask.Domain`. If it is ever built, its default globbing will pick up the Domain sources.
-    Remove it or move it before adding `SmartTask.Api`.
+  - ~~Template `TaskPlus/src/TaskPlus.csproj` overlaps `src/SmartTask.Domain`~~. Resolved: the template is gone.

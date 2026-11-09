@@ -1,5 +1,4 @@
 <Solution>
-  <!-- <Project Path="src/TaskPlus.csproj" /> -->
   <Folder Name="/src/">
     <Project Path="src/SmartTask.Domain/SmartTask.Domain.csproj" />
   </Folder>
