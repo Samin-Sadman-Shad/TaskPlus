@@ -1,3 +1,9 @@
 <Solution>
   <!-- <Project Path="src/TaskPlus.csproj" /> -->
+  <Folder Name="/src/">
+    <Project Path="src/SmartTask.Domain/SmartTask.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmartTask.Domain.UnitTests/SmartTask.Domain.UnitTests.csproj" />
+  </Folder>
 </Solution>
