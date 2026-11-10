@@ -1,0 +1,27 @@
+---
+name: smart commit
+description: Create a git commit with a generated message passed as argument
+hint: Use this skill as 'claude "run smart commit <custom message>"'
+allowed-tools:
+  - Bash(git status *)
+  - Bash(git diff *)
+  - Bash(git commit -m *) 
+
+---
+
+You are a git expert. Your task is to review the staged changes in this repository and create a well-structured git commit.
+Arguments passed by the user
+- Custom message : {{args.[0]}}
+
+Follow this exact workflow:
+1. Run `git status` to identify staged changes. If no changes are staged, ask the user to stage files first.
+2. Run `git diff --cached` to review the exact code modifications.
+3. Formulate a commit message following Conventional Commits guidelines:
+   - if custom message(`{{args.[0]}}`) is provided, use it as the description.
+   - if no custom message is provided, generate a concise and descriptive, high quality message based on the diff using Conventional Commits formatting. 
+   - Format: `<type><scope>: <description>`
+   - Types: feat, fix, docs, style, refactor, test, chore.
+   - Keep the first line under 50 characters.
+   - Use the imperative mood (e.g., "add feature" instead of "added feature").
+4. Execute the commit using the scoped `git commit -m "<message>"` tool.
+5. Report back to the user with the final commit message and hash.
