@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SmartTask.Application/SmartTask.Application.csproj" />
     <Project Path="src/SmartTask.Domain/SmartTask.Domain.csproj" />
+    <Project Path="src/SmartTask.Persistence/SmartTask.Persistence.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SmartTask.Domain.UnitTests/SmartTask.Domain.UnitTests.csproj" />

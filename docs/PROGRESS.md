@@ -4,8 +4,8 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 
 | Step | Command                 | Status      | Scope | Notes |
 |------|-------------------------|-------------|-------|-------|
-| 1    | `/create-domain`        | Done (tests not run) | all   | Build ✅; test run blocked by Windows Application Control policy |
-| 2    | `/create-repositories`  | Not started |       |       |
+| 1    | `/create-domain`        | Done        | all   | Build ✅; Tests ✅ (53 passed) |
+| 2    | `/create-repositories`  | Done        | all   | Build ✅; Tests ✅ (53); LocalDB smoke test ✅ (40 checks); no migration yet |
 | 3    | `/create-dto`           | Not started |       |       |
 | 4    | `/implement-validators` | Not started |       |       |
 
@@ -18,6 +18,49 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-10 — /create-repositories (all)
+- Created projects: `src/SmartTask.Application` (references Domain only, no packages) and
+  `src/SmartTask.Persistence` (EF Core SqlServer + Design 10.0.14), both added to `SmartTask.slnx` under `/src/`.
+- Created in `SmartTask.Application`:
+  - `Contracts/Persistence/`: IRepository, IUserRepository, IRefreshTokenRepository, IProjectRepository,
+    ITaskItemRepository, IDashboardReadRepository, IUnitOfWork
+  - `Contracts/Identity/ICurrentUserService`
+  - `Common/Models/`: PagedResult, PageQuery, SortDirection, Project/Task/UserQueryParameters
+    (each with `SortFields` constants and `AllowedSortFields`), ProjectListItem, UpcomingTaskReadModel, DashboardStatsReadModel
+  - `Common/Exceptions/ConflictException`
+- Created in `SmartTask.Persistence`: SmartTaskDbContext, UnitOfWork, DependencyInjection (`AddPersistence`);
+  `Configurations/` (5 entities); `Interceptors/` (SoftDelete, AuditableEntity); `Extensions/` (QueryableExtensions,
+  AccessQueryExtensions); `Repositories/` (Repository<T> + 5 specific repositories).
+- Updated Domain: `RefreshTokenConstraints.TokenHashMaxLength` (128; a unique index can't use nvarchar(max));
+  new `DashboardConstraints` (UpcomingWindowDays 7, UpcomingTaskCount 5).
+- Build: ✅ (0 warnings, 0 errors) / Tests: ✅ (53 passed). A throwaway LocalDB smoke test (scratchpad, not committed)
+  ran every repository method, the interceptors, the RowVersion and unique-index conflicts, the transaction and soft delete: 40/40 passed.
+- Decisions / deviations:
+  - **No `User` navigation on RefreshToken and no `Project` navigation on TaskItem** (user's decision: the spec
+    doesn't define them). `GetByTokenHashAsync` returns the token only, so the caller loads the user by `UserId`.
+    `TaskItemRepository.GetDetailsAsync` includes only `Assignee`.
+  - Ids are `ValueGeneratedNever()` for every BaseEntity. Without it, EF treated new child entities that already
+    had an Id (e.g. `User.AddRefreshToken`) as existing rows and issued UPDATEs (found by the smoke test).
+  - `CascadeDeleteTiming = OnSaveChanges`, so a soft-deleted project doesn't hard-delete its tracked members/tasks.
+    Task queries always join to non-deleted projects, so tasks of a deleted project are hidden even though their own
+    `IsDeleted` stays false.
+  - `ApplySorting` takes `SortDirection?`: null means asc for an explicit key and the default direction (desc) for the fallback.
+  - The UoW also maps unique-index violations (SQL 2601/2627) to `ConflictException`.
+  - `ProjectListItem.MemberCount` includes the owner (matches `Project.HasMember`).
+  - Dashboard scopes: Admin = all; ProjectManager = owned projects and their tasks; TeamMember = projects they belong to
+    plus tasks assigned to them.
+  - Pinned `System.Security.Cryptography.Pkcs` 10.0.14 in Persistence: SqlClient 6.1.7 pulls 9.0.11 (NU1902/NU1903).
+- Next: `dotnet ef migrations add InitialCreate -p src/SmartTask.Persistence -s src/SmartTask.Api` once the Api project exists.
+- Open questions: none blocking. Repository integration tests (Testcontainers) are still to do.
+
+### 2026-11-10 — /create-domain (all), re-run to verify
+- Created: nothing. Updated: `docs/PROGRESS.md` only. The existing Domain code was checked against
+  `docs/DOMAIN-MODEL.md` and matches it; the known deviations are listed in the first `/create-domain` entry below.
+- Build: ✅ (0 warnings, 0 errors) / Tests: ✅ (53 passed). The Application Control block from the first run no longer occurs.
+- Self-check: no project or package references, no public setters, no `DateTime*.Now`/`UtcNow`,
+  no EF, DataAnnotations or serialization attributes.
+- Open questions: none new.
 
 ### 2026-11-10 — Restructure: solution moved to repo root
 - Moved `TaskPlus/SmartTask.slnx`, `TaskPlus/Directory.Build.props`, `TaskPlus/src/` and `TaskPlus/tests/`
