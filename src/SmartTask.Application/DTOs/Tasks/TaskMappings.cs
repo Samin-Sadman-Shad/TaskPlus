@@ -20,7 +20,24 @@ public static class TaskMappings
     public static TaskDto ToDto(this TaskItem task, string projectName, DateOnly today)
     {
         ArgumentNullException.ThrowIfNull(task);
+        return task.ToDto(projectName, today, LoadedAssignee(task));
+    }
+
+    /// <summary>
+    /// Maps a task with an explicitly supplied assignee. Use this right after <c>TaskItem.AssignTo</c>
+    /// or <c>TaskItem.Create</c>, when the service has just loaded the assignee and the task's
+    /// navigation may not reflect the change yet.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="assignee"/> does not match <see cref="TaskItem.AssigneeId"/>.</exception>
+    public static TaskDto ToDto(this TaskItem task, string projectName, DateOnly today, User? assignee)
+    {
+        ArgumentNullException.ThrowIfNull(task);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectName);
+
+        if (assignee?.Id != task.AssigneeId)
+        {
+            throw new ArgumentException($"Assignee {assignee?.Id} does not match task {task.Id}'s assignee {task.AssigneeId}.", nameof(assignee));
+        }
 
         return new TaskDto
         {
@@ -33,7 +50,7 @@ public static class TaskMappings
             Priority = task.Priority,
             DueDate = task.DueDate,
             IsOverdue = task.IsOverdue(today),
-            Assignee = LoadedAssignee(task)?.ToSummaryDto(),
+            Assignee = assignee?.ToSummaryDto(),
             CompletedAt = task.CompletedAt,
             CreatedAt = task.CreatedAt,
             UpdatedAt = task.UpdatedAt,

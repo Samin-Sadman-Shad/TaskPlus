@@ -20,6 +20,16 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Open questions / follow-ups: …
 -->
 
+### 2026-11-11 — /create-api: stopped, waiting for /implement-auth
+- Not started: `/create-api` depends on `AddJwtAuthentication`, `CurrentUserService` and `AddInfrastructure()`
+  from `/implement-auth` (step 5 in WORKFLOW.md). The user chose to run `/implement-auth` first.
+- Fixed a `/create-features` bug found when its tests first ran (310 passed, 2 failed):
+  `TaskService.CreateAsync`/`AssignAsync` reloaded the task and relied on EF to fill `Assignee`, which the mapping guard rejected.
+  The service now passes the assignee it already loaded (`ResolveAssigneeAsync`) to a new
+  `TaskMappings.ToDto(task, projectName, today, assignee)` overload. That removes the hidden EF dependency and one query.
+- Tests: ⚠️ the re-run after the fix was blocked again by Windows Application Control, this time on the rebuilt
+  `SmartTask.Application.UnitTests.dll`. The 53 Domain tests pass. Re-run `dotnet test SmartTask.slnx` to confirm.
+
 ### 2026-11-11 — /create-features (Users, Projects, Tasks, Dashboard)
 - Created in `src/SmartTask.Application/`:
   - `Common/Responses/`: IBaseResponse, BaseResponse, BaseResponse<T> (as in API-CONVENTIONS §2), ResponseMessages

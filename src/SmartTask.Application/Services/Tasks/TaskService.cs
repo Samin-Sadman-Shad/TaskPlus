@@ -70,7 +70,8 @@ public sealed class TaskService(
                 return Denied(ResponseMessages.TaskModifyForbidden, null);
             }
 
-            if (!await IsAssignableAsync(project, dto.AssigneeId, cancellationToken))
+            var (assignable, assignee) = await ResolveAssigneeAsync(project, dto.AssigneeId, cancellationToken);
+            if (!assignable)
             {
                 return BaseResponse<TaskDto>.BadRequest(ResponseMessages.AssigneeNotMember);
             }
@@ -80,7 +81,7 @@ public sealed class TaskService(
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation("Task {TaskId} created in project {ProjectId} by {UserId}", task.Id, projectId, currentUser.UserId);
-            return BaseResponse<TaskDto>.Created(await ToDtoAsync(task, project, cancellationToken));
+            return BaseResponse<TaskDto>.Created(task.ToDto(project.Name, Today(), assignee));
         });
     }
 
@@ -162,7 +163,8 @@ public sealed class TaskService(
                 return failure;
             }
 
-            if (!await IsAssignableAsync(project!, dto.AssigneeId, cancellationToken))
+            var (assignable, assignee) = await ResolveAssigneeAsync(project!, dto.AssigneeId, cancellationToken);
+            if (!assignable)
             {
                 return BaseResponse<TaskDto>.BadRequest(ResponseMessages.AssigneeNotMember);
             }
@@ -171,7 +173,7 @@ public sealed class TaskService(
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation("Task {TaskId} assigned to {AssigneeId} by {UserId}", id, dto.AssigneeId, currentUser.UserId);
-            return BaseResponse<TaskDto>.Ok(await ToDtoAsync(task, project!, cancellationToken));
+            return BaseResponse<TaskDto>.Ok(task.ToDto(project!.Name, Today(), assignee));
         });
     }
 
@@ -204,29 +206,23 @@ public sealed class TaskService(
 
     /// <summary>
     /// <c>null</c> (unassigned) is always fine. Otherwise the user must be a member of the project
-    /// (the owner counts) and active.
+    /// (the owner counts) and active. Returns the loaded user, so the response can show the new
+    /// assignee without relying on EF to update the task's navigation.
     /// </summary>
-    private async Task<bool> IsAssignableAsync(Project project, Guid? assigneeId, CancellationToken cancellationToken)
+    private async Task<(bool Assignable, User? Assignee)> ResolveAssigneeAsync(Project project, Guid? assigneeId, CancellationToken cancellationToken)
     {
         if (assigneeId is not { } userId)
         {
-            return true;
+            return (true, null);
         }
 
         if (!project.HasMember(userId))
         {
-            return false;
+            return (false, null);
         }
 
         var user = await users.GetByIdAsync(userId, cancellationToken);
-        return user is { IsActive: true };
-    }
-
-    /// <summary>Reloads the task with <c>Assignee</c> after a change to the assignee, so the response shows the new name.</summary>
-    private async Task<TaskDto> ToDtoAsync(TaskItem task, Project project, CancellationToken cancellationToken)
-    {
-        var reloaded = await tasks.GetDetailsAsync(task.Id, cancellationToken) ?? task;
-        return reloaded.ToDto(project.Name, Today());
+        return user is { IsActive: true } ? (true, user) : (false, null);
     }
 
     private Task<BaseResponse<TaskDto>> Guarded(Func<Task<BaseResponse<TaskDto>>> operation) =>
