@@ -124,7 +124,8 @@ Behaviour:
 Computed: `IsExpired(DateTimeOffset now)`, `IsActive(DateTimeOffset now)`.
 Behaviour: `static Create(userId, tokenHash, expiresAt, createdAt, ip)`, `Revoke(at, reason, replacedByHash?)`.
 
-The raw refresh token is returned to the client **only** inside `AuthResponseDto` at issue time.
+The raw refresh token is sent to the client **only** as an HttpOnly, Secure, SameSite=Strict cookie
+when it is issued. It never appears in a JSON body or in the database.
 
 ---
 
@@ -205,8 +206,7 @@ Allowed status transitions (anything else throws `InvalidStatusTransitionExcepti
 |----------------------------------|-------------------------------------------|
 | `RegisterRequestDto`             | FirstName, LastName, Email, Password, ConfirmPassword |
 | `LoginRequestDto`                | Email, Password                           |
-| `RefreshTokenRequestDto`         | RefreshToken                              |
-| `AuthResponseDto`                | AccessToken, AccessTokenExpiresAt, RefreshToken, RefreshTokenExpiresAt, User (`UserDto`) |
+| `AuthResponseDto`                | AccessToken, AccessTokenExpiresAt, User (`UserDto`) — the refresh token travels in a cookie, never here |
 | `ChangeUserRoleDto`              | Role (Admin only)                         |
 | `ImproveDescriptionRequestDto`   | Title (optional context), Description     |
 | `ImproveDescriptionResponseDto`  | OriginalDescription, ImprovedDescription, Suggestions (list) |

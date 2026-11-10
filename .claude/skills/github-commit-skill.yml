@@ -1,5 +1,5 @@
 ---
-name: smart commit
+name: smart-commit
 description: Create a git commit with a generated message passed as argument
 hint: Use this skill as 'claude "run smart commit <custom message>"'
 allowed-tools:

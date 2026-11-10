@@ -28,9 +28,9 @@ If the spec is ambiguous or missing something you need, **stop and ask** instead
 If `src/SmartTask.Domain/SmartTask.Domain.csproj` does not exist:
 
 ```bash
-dotnet new sln -n SmartTask --format slnx   # only if SmartTask.slnx is missing at the repo root
+dotnet new sln -n SmartTask            # only if SmartTask.sln is missing
 dotnet new classlib -n SmartTask.Domain -o src/SmartTask.Domain -f net10.0
-dotnet sln SmartTask.slnx add src/SmartTask.Domain/SmartTask.Domain.csproj
+dotnet sln SmartTask.sln add src/SmartTask.Domain/SmartTask.Domain.csproj
 ```
 
 Delete the template `Class1.cs`. If `Directory.Build.props` is missing at the repo root, create it with
@@ -95,7 +95,7 @@ the Domain project and add it to the solution. Add focused tests for:
 ## 6. Verify
 
 ```bash
-dotnet build SmartTask.slnx
+dotnet build SmartTask.sln
 dotnet test tests/SmartTask.Domain.UnitTests
 ```
 

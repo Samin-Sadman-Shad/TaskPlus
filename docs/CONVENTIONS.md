@@ -6,7 +6,7 @@
 - `Nullable` and `ImplicitUsings` enabled; `TreatWarningsAsErrors` in `Directory.Build.props`.
 - One public type per file; file name = type name.
 - `sealed` by default for classes that are not designed for inheritance (DTO records, validators,
-  repositories, handlers).
+  repositories, services, controllers).
 - DTOs are `sealed record`s with `init`/positional properties. No behaviour in DTOs.
 - Entities: private setters, private parameterless constructor for EF, public factory `Create`.
 - Collections on entities exposed as `IReadOnlyCollection<T>` over a private `List<T>` field.
@@ -30,7 +30,10 @@
 | Mapping               | `<Entity>Mappings` (static)      | `ProjectMappings.ToDto()`       |
 | Validator             | `<DtoName>Validator`             | `CreateProjectDtoValidator`     |
 | EF configuration      | `<Entity>Configuration`          | `ProjectConfiguration`          |
-| Command / Query       | `<Verb><Entity>Command/Query`    | `CreateProjectCommand`          |
+| Service contract      | `I<Feature>Service`              | `IProjectService`               |
+| Service impl          | `<Feature>Service`               | `ProjectService`                |
+| Service method        | `<Verb>Async`                    | `CreateAsync`, `UpdateStatusAsync` |
+| Controller            | `<Feature>Controller : BaseApiController` | `ProjectsController`    |
 
 ## API
 
@@ -38,7 +41,8 @@
 - `POST` create → `201 Created` with `Location`; `PUT` full update → `200`; `PATCH` for status/assign;
   `DELETE` → `204`.
 - Resource ids come from the **route**, never from the body.
-- All responses wrapped in `ApiResponse<T>` (`success`, `data`, `message`, `errors`, `traceId`).
+- All responses use `BaseResponse` / `BaseResponse<T>` (`statusCode`, `success`, `data`, `message`,
+  `errors`, `traceId`) — see `docs/API-CONVENTIONS.md`. The full endpoint list lives there too.
 - Query string for lists: `pageNumber`, `pageSize`, `search`, `sortBy`, `sortDirection`, plus filters.
 
 ## Tests

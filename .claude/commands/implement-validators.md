@@ -40,15 +40,14 @@ public static IServiceCollection AddApplication(this IServiceCollection services
 }
 ```
 
-Do **not** use the deprecated `FluentValidation.AspNetCore` auto-validation package. Validation will
-run explicitly in the application pipeline / an endpoint filter (wired up in a later command). Add a
-small helper the pipeline can reuse:
+Do **not** use the deprecated `FluentValidation.AspNetCore` auto-validation package. Validators run
+in the API's global `ValidationFilter` (`docs/API-CONVENTIONS.md` §4, built by `/implement-auth` or
+`/create-api`), which returns `BaseResponse.ValidationFailed(errors)` with a 400. Add a small helper the
+filter can reuse:
 
-`src/SmartTask.Application/Common/Validation/ValidationExtensions.cs`
-- `Task ValidateAndThrowAppAsync<T>(this IValidator<T> v, T instance, CancellationToken ct)` that throws
-  the Application's `ValidationException` (create under `Common/Exceptions` if missing) carrying
-  `IReadOnlyDictionary<string, string[]> Errors` grouped by property name (camelCase), so the API can
-  return a consistent 400 response.
+`src/SmartTask.Application/Common/Validation/ValidationResultExtensions.cs`
+- `IReadOnlyDictionary<string, string[]> ToErrorDictionary(this ValidationResult result)` — groups
+  errors by property name with camelCase keys (`"endDate"`, `"password"`).
 
 ## 2. Validator style
 
@@ -64,7 +63,7 @@ small helper the pipeline can reuse:
   (`DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime)`); never call `DateTime.UtcNow`.
 - **Keep validators pure** — shape, format and range only. No repositories or database calls.
   Uniqueness (email, project name), existence (assignee, project) and permission checks belong in the
-  handlers and are backed by unique indexes. State this in an XML comment on each validator where a
+  services and are backed by unique indexes. State this in an XML comment on each validator where a
   reader might expect a DB check.
 - Treat whitespace-only strings as empty (`NotEmpty()` + `Must(s => !string.IsNullOrWhiteSpace(s))`
   or a shared `NotBlank()` extension).
@@ -79,7 +78,8 @@ small helper the pipeline can reuse:
 | `RegisterRequestDto.Password` | NotEmpty, length `PasswordMinLength`–`PasswordMaxLength`, ≥1 upper, ≥1 lower, ≥1 digit, ≥1 non-alphanumeric, must not contain the email local-part |
 | `RegisterRequestDto.ConfirmPassword` | `Equal(x => x.Password)` with message "Passwords do not match." |
 | `LoginRequestDto` | Email NotBlank + EmailAddress; Password NotEmpty + ≤ `PasswordMaxLength`. **Do not** apply complexity rules on login (don't reveal policy, don't block legacy passwords). |
-| `RefreshTokenRequestDto`, `LogoutRequestDto` | RefreshToken NotBlank, ≤ 512 |
+
+(Refresh and logout have no request body — the token comes from the HttpOnly cookie — so they have no validator.)
 
 ### Users
 | DTO | Rules |
@@ -145,8 +145,8 @@ Use `TestValidate(...)` and `ShouldHaveValidationErrorFor(x => x.Prop)`.
 ## 5. Verify
 
 ```bash
-dotnet build SmartTask.slnx
-dotnet test SmartTask.slnx
+dotnet build SmartTask.sln
+dotnet test SmartTask.sln
 ```
 
 Self-check, report ✅/❌:
@@ -163,5 +163,5 @@ Self-check, report ✅/❌:
 1. Update `docs/PROGRESS.md` (status + log entry with test count).
 2. Print a table: Validator → rules summary; list any rules you were unsure about.
 3. Suggested commit: `feat(application): add FluentValidation validators and tests`.
-4. Do **not** wire validators into controllers or create handlers in this command — note it as a
-   follow-up for `/create-features` / `/create-api`.
+4. Do **not** wire validators into controllers or create services in this command. `ValidationFilter`
+   is set up by `/implement-auth` or `/create-api`.

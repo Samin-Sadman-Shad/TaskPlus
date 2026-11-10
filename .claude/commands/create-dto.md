@@ -89,13 +89,12 @@ Location: `src/SmartTask.Application/DTOs/<Feature>/`
 |--------------------------|--------|
 | `RegisterRequestDto`     | FirstName, LastName, Email, Password, ConfirmPassword |
 | `LoginRequestDto`        | Email, Password |
-| `RefreshTokenRequestDto` | RefreshToken |
-| `LogoutRequestDto`       | RefreshToken |
-| `AuthResponseDto`        | AccessToken, AccessTokenExpiresAt, RefreshToken, RefreshTokenExpiresAt, User (`UserDto`) |
+| `AuthResponseDto`        | AccessToken, AccessTokenExpiresAt, User (`UserDto`) |
 
-Add a `<remarks>` on `AuthResponseDto`: the raw refresh token appears here once and is never
-persisted in plain text. Override `ToString()` on request DTOs carrying `Password` or `RefreshToken`
-to redact them, so they can't leak into logs.
+Refresh and logout have **no request body**. The refresh token travels only in an HttpOnly cookie
+(see `/implement-auth`), so there is no refresh-token DTO and `AuthResponseDto` must not contain it.
+Add a `<remarks>` on `AuthResponseDto` saying so. Override `ToString()` on request DTOs carrying
+`Password` to redact it, so it can't leak into logs.
 
 ### Projects/
 | DTO                  | Fields |
@@ -150,7 +149,7 @@ public static class ProjectMappings
 Rules:
 - Explicit, hand-written mapping — no AutoMapper, no reflection.
 - Mapping is **one-way: domain → read DTO**. Create/Update DTOs are **not** mapped onto entities;
-  handlers call the entity's `Create(...)` / `Update(...)` methods so invariants are enforced.
+  services call the entity's `Create(...)` / `Update(...)` methods so invariants are enforced.
 - Methods that need "today" (e.g. `IsOverdue`) take `DateOnly today` as a parameter — no clock calls.
 - Guard against null navigations that the repository contract doesn't promise to include; prefer
   making the contract include them over defensive defaults.
@@ -159,8 +158,8 @@ Rules:
 ## 5. Verify
 
 ```bash
-dotnet build SmartTask.slnx
-dotnet test SmartTask.slnx
+dotnet build SmartTask.sln
+dotnet test SmartTask.sln
 ```
 
 Then run this check and report the result (should print nothing):
@@ -175,11 +174,11 @@ Self-check, report ✅/❌:
 - [ ] No `Id` / `OwnerId` / `ProjectId` / `Status` / `Role` in Create or Update request bodies
 - [ ] Status and assignment have dedicated action DTOs
 - [ ] Mapping is domain → read only, explicit, no clock calls
-- [ ] Password / token DTOs redact themselves in `ToString()`
+- [ ] DTOs carrying a password redact it in `ToString()`; no DTO carries a refresh token
 
 ## 6. Finish
 
 1. Update `docs/PROGRESS.md` (status + log entry).
 2. Print a table: DTO → endpoint it is intended for → fields; list any open questions.
 3. Suggested commit: `feat(application): add CQRS DTOs and mappings`.
-4. Do **not** create validators, handlers or controllers in this command.
+4. Do **not** create validators, services or controllers in this command.

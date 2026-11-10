@@ -30,7 +30,7 @@ If missing, create and wire them:
 ```bash
 dotnet new classlib -n SmartTask.Application -o src/SmartTask.Application -f net10.0
 dotnet new classlib -n SmartTask.Persistence -o src/SmartTask.Persistence -f net10.0
-dotnet sln SmartTask.slnx add src/SmartTask.Application src/SmartTask.Persistence
+dotnet sln SmartTask.sln add src/SmartTask.Application src/SmartTask.Persistence
 dotnet add src/SmartTask.Application reference src/SmartTask.Domain
 dotnet add src/SmartTask.Persistence reference src/SmartTask.Application
 dotnet add src/SmartTask.Persistence package Microsoft.EntityFrameworkCore.SqlServer
@@ -194,8 +194,8 @@ Application's `ConflictException` (create it under `Application/Common/Exception
 ## 5. Verify
 
 ```bash
-dotnet build SmartTask.slnx
-dotnet test SmartTask.slnx
+dotnet build SmartTask.sln
+dotnet test SmartTask.sln
 ```
 
 Do **not** add a migration in this command unless the user asks; mention it as the next step.
@@ -216,4 +216,4 @@ Self-check, report ✅/❌:
    commit message (`feat(persistence): add repositories, DbContext and configurations`) and the next
    step: `dotnet ef migrations add InitialCreate -p src/SmartTask.Persistence -s src/SmartTask.Api`
    (once the Api project exists).
-3. Do **not** create DTOs, handlers or controllers in this command.
+3. Do **not** create DTOs, services or controllers in this command.
