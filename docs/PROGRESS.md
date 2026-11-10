@@ -6,7 +6,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 |------|-------------------------|-------------|-------|-------|
 | 1    | `/create-domain`        | Done        | all   | Build ✅; Tests ✅ (53 passed) |
 | 2    | `/create-repositories`  | Done        | all   | Build ✅; Tests ✅ (53); LocalDB smoke test ✅ (40 checks); no migration yet |
-| 3    | `/create-dto`           | Not started |       |       |
+| 3    | `/create-dto`           | Done        | all   | Build ✅; Tests ✅ (53); sensitive-field grep empty; scratch mapping check ✅ (10) |
 | 4    | `/implement-validators` | Not started |       |       |
 
 ## Log
@@ -18,6 +18,30 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-10 — /create-dto (all)
+- Created in `src/SmartTask.Application/DTOs/`:
+  - `Users/`: UserDto, UserSummaryDto, UpdateUserProfileDto, ChangeUserRoleDto, UserMappings
+  - `Auth/`: RegisterRequestDto, LoginRequestDto, AuthResponseDto, AuthRedaction (internal)
+  - `Projects/`: CreateProjectDto, UpdateProjectDto, ProjectDto, ProjectSummaryDto, ProjectMemberDto, AddProjectMemberDto, ProjectMappings
+  - `Tasks/`: CreateTaskDto, UpdateTaskDto, UpdateTaskStatusDto, AssignTaskDto, TaskDto, TaskSummaryDto, TaskMappings
+  - `Dashboard/`: DashboardStatsDto, DashboardMappings
+  - `Ai/`: ImproveDescriptionRequestDto, ImproveDescriptionResponseDto
+- Build: ✅ (0 warnings) / Tests: ✅ (53 passed). The sensitive-field grep prints nothing. A scratch check (not committed)
+  covered ToString redaction, IsOverdue, the missing-navigation guard and dashboard enum filling: 10/10 passed.
+- Decisions:
+  - `ProjectMappings.ToDto(project, taskCount, completedTaskCount)`: `GetDetailsAsync` doesn't load tasks, so the counts are parameters.
+  - `TaskMappings.ToDto(task, projectName, today)`: TaskItem has no Project navigation (decided in step 2), so the caller passes the name.
+  - Mappings throw `InvalidOperationException` if a promised navigation (Owner, Members.User, a set Assignee) wasn't loaded,
+    instead of returning empty names.
+  - `ProjectDto.Members` lists explicit members only; the owner is in `Owner`. `MemberCount` = members + owner.
+  - `AuthResponseDto.ToString()` also redacts `AccessToken` (the command only required redacting passwords).
+  - `UpdateTaskDto.Priority` defaults to `Medium`, the same as on create.
+- Open questions / follow-ups for `/create-features`:
+  - `IProjectRepository` has no task-count query for `ProjectDto`. Add one (e.g. `GetTaskCountsAsync(projectId)`) rather than loading tasks.
+  - API-CONVENTIONS has `GET dashboard?upcomingDays=7`, but `IDashboardReadRepository.GetStatsAsync` uses the fixed
+    `DashboardConstraints.UpcomingWindowDays`. Either add a parameter or drop the query option.
+  - The overdue rule is written three times: `TaskItem.IsOverdue`, the SQL predicate, and `UpcomingTaskReadModel` mapping.
 
 ### 2026-11-10 — /create-repositories (all)
 - Created projects: `src/SmartTask.Application` (references Domain only, no packages) and
