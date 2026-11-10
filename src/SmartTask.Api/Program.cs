@@ -1,21 +1,45 @@
+using Serilog;
 using SmartTask.Api.Extensions;
 using SmartTask.Application;
 using SmartTask.Infrastructure;
 using SmartTask.Persistence;
 
-var builder = WebApplication.CreateBuilder(args);
+// Bootstrap logger: catches start-up failures before configuration is loaded. It is a plain logger
+// (not CreateBootstrapLogger), so several hosts in one test process don't clash.
+Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateLogger();
 
-builder.Services
-    .AddApplication()
-    .AddPersistence(builder.Configuration)
-    .AddInfrastructure(builder.Configuration)
-    .AddApiServices(builder.Configuration);
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
 
-var app = builder.Build();
+    builder.Host.UseSerilog((context, services, logger) => logger
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext());
 
-app.UseApiPipeline();
+    builder.Services
+        .AddApplication()
+        .AddPersistence(builder.Configuration)
+        .AddInfrastructure(builder.Configuration)
+        .AddApiServices(builder.Configuration, builder.Environment);
 
-app.Run();
+    var app = builder.Build();
+
+    app.UseApiPipeline();
+    await app.SeedDevelopmentDataAsync();
+
+    await app.RunAsync();
+}
+catch (Exception ex) when (ex is not HostAbortedException)
+{
+    // HostAbortedException is how design-time tools (dotnet ef) stop the host on purpose; it is not a failure.
+    Log.Fatal(ex, "The API terminated unexpectedly");
+    Environment.ExitCode = 1;
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}
 
 /// <summary>Exposed so integration tests can host the API with <c>WebApplicationFactory&lt;Program&gt;</c>.</summary>
 public partial class Program;

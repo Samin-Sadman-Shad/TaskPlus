@@ -15,9 +15,10 @@ public static class RateLimitingExtensions
     private const string AnonymousPartition = "anonymous";
 
     /// <summary>
-    /// Registers the <c>global</c> limiter (fixed window per user, otherwise per IP) and the <c>auth</c>
-    /// policy (sliding window per IP). Rejections return a 429 <see cref="BaseResponse"/> with
-    /// <c>Retry-After</c>. The <c>ai</c> policy is added by <c>/implement-ai</c>.
+    /// Registers the <c>global</c> limiter (fixed window per user, otherwise per IP; it applies to every
+    /// endpoint that doesn't opt out with <c>DisableRateLimiting</c>), the <c>auth</c> policy (sliding
+    /// window per IP) and the <c>ai</c> policy (token bucket per user). Rejections return a 429
+    /// <see cref="BaseResponse"/> with <c>Retry-After</c>.
     /// </summary>
     public static IServiceCollection AddApiRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -39,6 +40,16 @@ public static class RateLimitingExtensions
                     PermitLimit = limits.Auth.PermitLimit,
                     Window = TimeSpan.FromSeconds(limits.Auth.WindowSeconds),
                     SegmentsPerWindow = limits.Auth.SegmentsPerWindow,
+                    QueueLimit = 0,
+                }));
+
+            options.AddPolicy(RateLimitPolicies.Ai, context =>
+                RateLimitPartition.GetTokenBucketLimiter(UserOrIp(context), _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = limits.Ai.TokenLimit,
+                    TokensPerPeriod = limits.Ai.TokensPerPeriod,
+                    ReplenishmentPeriod = TimeSpan.FromSeconds(limits.Ai.ReplenishmentSeconds),
+                    AutoReplenishment = true,
                     QueueLimit = 0,
                 }));
 
@@ -69,8 +80,14 @@ public static class RateLimitingExtensions
     private static TimeSpan EstimateRetryAfter(HttpContext context, RateLimitingOptions limits)
     {
         var policy = context.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
-        var limit = policy == RateLimitPolicies.Auth ? limits.Auth : limits.Global;
 
+        if (policy == RateLimitPolicies.Ai)
+        {
+            // One token comes back per (period / tokens-per-period).
+            return TimeSpan.FromSeconds((double)limits.Ai.ReplenishmentSeconds / Math.Max(limits.Ai.TokensPerPeriod, 1));
+        }
+
+        var limit = policy == RateLimitPolicies.Auth ? limits.Auth : limits.Global;
         return TimeSpan.FromSeconds((double)limit.WindowSeconds / Math.Max(limit.SegmentsPerWindow, 1));
     }
 

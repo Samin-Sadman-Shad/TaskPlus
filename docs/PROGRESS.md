@@ -10,6 +10,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 4    | `/implement-validators` | Done        | all   | Build ✅; Tests ✅ (232 = 53 Domain + 179 Application) |
 | 5    | `/create-features`      | Done        | Users, Projects, Tasks, Dashboard | Tests verified later (2 failures found and fixed in `1b6be76`) |
 | 6    | `/implement-auth`       | Done        | all   | Build ✅; Tests ✅ (353 = 55 Domain + 276 Application + 22 Infrastructure); HTTP end-to-end on LocalDB ✅ |
+| 7    | `/create-api`           | Done        | all (AiController pending /implement-ai) | Build ✅; Tests ✅ (382, +29 API integration); InitialCreate migration applied to LocalDB; /swagger and /health/ready ✅ |
 
 ## Log
 
@@ -20,6 +21,45 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /create-api (all)
+- Controllers (one-line actions on `BaseApiController`, only the service interface injected, XML summaries,
+  `ProducesResponseType` for every service status plus 401/429): UsersController, ProjectsController, TasksController
+  (routes under `projects/{projectId}/tasks` and `tasks`), DashboardController. AuthController (from /implement-auth) already followed the rules.
+  AiController is skipped: its service doesn't exist yet (`/implement-ai`).
+- Host setup (reusing the /implement-auth foundations, nothing duplicated):
+  - `Extensions/`: SwaggerExtensions (**Swashbuckle 11**, XML comments, JWT bearer scheme + requirement; UI in Development or when `Swagger:Enabled`),
+    CorsExtensions (`Frontend` policy from `Cors:AllowedOrigins`, credentials, explicit methods/headers, exposes Location/Retry-After),
+    HealthCheckExtensions (`/health/live`, `/health/ready` with the DbContext check, anonymous, no rate limiting, JSON writer without exception details),
+    RateLimitingExtensions (+ `ai` token bucket per user), ServiceCollectionExtensions (`AddApiServices(config, env)`; Kestrel body limit 1 MB),
+    WebApplicationExtensions (`UseApiPipeline()` in the order /create-api specifies; `UserId`/`TraceId` pushed to the Serilog LogContext; `SeedDevelopmentDataAsync()`)
+  - `Middleware/SecurityHeadersMiddleware` (nosniff, DENY, no-referrer, CSP `default-src 'none'; frame-ancestors 'none'`, not on /swagger)
+  - `Program.cs` (45 lines): Serilog bootstrap logger + `UseSerilog(ReadFrom.Configuration/Services, FromLogContext)`, `try/catch/finally CloseAndFlush`
+    (`HostAbortedException` from `dotnet ef` is not logged as fatal)
+  - `appsettings.json`: Serilog (Console + rolling compact-JSON file `logs/`), Cors, RateLimiting (global/auth/ai), Swagger off, Seed off,
+    LocalDB connection with integrated security; no secrets. `appsettings.Development.json`: Swagger on, Debug logging.
+  - Api csproj: `GenerateDocumentationFile` with CS1591 suppressed; packages Serilog.AspNetCore 10.0.0, Swashbuckle.AspNetCore 11.0.0,
+    HealthChecks.EntityFrameworkCore 10.0.14, EF Core Design 10.0.14.
+- Database: local tool manifest `dotnet-tools.json` (dotnet-ef 10.0.14; run `dotnet tool restore`). Migration
+  `Persistence/Migrations/*_InitialCreate` created and applied to LocalDB `SmartTask`.
+  `Persistence/Seed/DevelopmentDataSeeder`: Development **and** `Seed:Enabled` only. It migrates, then creates 3 users
+  (passwords from user-secrets `Seed:AdminPassword`, `Seed:ManagerPassword`, `Seed:MemberPassword`), 2 projects and 3 tasks. Idempotent.
+- Tests: `tests/SmartTask.Api.IntegrationTests` (WebApplicationFactory + in-memory SQLite, one shared host per collection). Covers health,
+  401 envelope (+ WWW-Authenticate, garbage token), 400 validation and malformed JSON, security headers, CORS allowed/denied,
+  Swagger document (bearer scheme, routes, XML comments), a full register → login (cookie flags) → /users/me → 403 → refresh → 204 logout flow,
+  and BaseApiController mapping for every status (204 → NoContentResult, unknown status passes through, ToCreatedResult).
+  Persistence gets `InternalsVisibleTo` for this project (to re-register the interceptors).
+  - SQLite can't compare `DateTimeOffset` (it broke refresh in the first run). A test-only `SqliteModelCustomizer` stores them as `long`;
+    the production mapping is unchanged.
+- Build ✅ / Tests ✅ **382** (55 Domain, 276 Application, 22 Infrastructure, 29 API). Running against LocalDB: `/health/ready` Healthy,
+  `/swagger` loads with all 21 routes, anonymous call → 401 envelope, request log lines carry TraceId/UserId.
+- Decisions:
+  - The global rate limit uses `GlobalLimiter` (applies to every endpoint) instead of `RequireRateLimiting("global")` on MapControllers.
+    It has the same effect, and health endpoints opt out with `DisableRateLimiting()`.
+  - Write endpoints that the table marks "A, PM-owner" use the `ProjectManagement` policy. Ownership is checked in the services.
+    `PATCH tasks/{id}/status` has no role policy because team-member assignees may call it.
+  - The Swagger UI is served by middleware before authentication, so it stays reachable while every endpoint requires a token.
+- Open: AiController (/implement-ai). Running the seeder needs the three `Seed:*Password` user-secrets.
 
 ### 2026-11-11 — /implement-auth
 - Created projects: `src/SmartTask.Infrastructure` (classlib) and `src/SmartTask.Api` (webapi, WeatherForecast and the

@@ -7,6 +7,7 @@
     <Project Path="src/SmartTask.Persistence/SmartTask.Persistence.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SmartTask.Api.IntegrationTests/SmartTask.Api.IntegrationTests.csproj" />
     <Project Path="tests/SmartTask.Application.UnitTests/SmartTask.Application.UnitTests.csproj" />
     <Project Path="tests/SmartTask.Domain.UnitTests/SmartTask.Domain.UnitTests.csproj" />
     <Project Path="tests/SmartTask.Infrastructure.UnitTests/SmartTask.Infrastructure.UnitTests.csproj" />

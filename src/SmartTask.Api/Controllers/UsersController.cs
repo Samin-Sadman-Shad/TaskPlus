@@ -1,0 +1,90 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using SmartTask.Api.Authorization;
+using SmartTask.Application.Common.Models;
+using SmartTask.Application.Common.Responses;
+using SmartTask.Application.Contracts.Services;
+using SmartTask.Application.DTOs.Users;
+
+namespace SmartTask.Api.Controllers;
+
+/// <summary>The current user's profile, plus user administration for admins.</summary>
+[Route("api/v1/users")]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status429TooManyRequests)]
+public sealed class UsersController(IUserService userService) : BaseApiController
+{
+    /// <summary>Gets the signed-in user's profile.</summary>
+    [HttpGet("me")]
+    [ProducesResponseType<BaseResponse<UserDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BaseResponse<UserDto>>> GetCurrent(CancellationToken cancellationToken)
+        => ToActionResult(await userService.GetCurrentAsync(cancellationToken));
+
+    /// <summary>Updates the signed-in user's first and last name.</summary>
+    [HttpPut("me")]
+    [ProducesResponseType<BaseResponse<UserDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BaseResponse<UserDto>>> UpdateCurrent(UpdateUserProfileDto dto, CancellationToken cancellationToken)
+        => ToActionResult(await userService.UpdateCurrentProfileAsync(dto, cancellationToken));
+
+    /// <summary>Lists users, paged, filtered and sorted (admin only).</summary>
+    [HttpGet]
+    [Authorize(Policy = Policies.AdminOnly)]
+    [ProducesResponseType<BaseResponse<PagedResult<UserDto>>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BaseResponse<PagedResult<UserDto>>>> GetPaged([FromQuery] UserQueryParameters parameters, CancellationToken cancellationToken)
+        => ToActionResult(await userService.GetPagedAsync(parameters, cancellationToken));
+
+    /// <summary>Finds active users by name or email, for member and assignee pickers (up to 20 results).</summary>
+    [HttpGet("lookup")]
+    [Authorize(Policy = Policies.ProjectManagement)]
+    [ProducesResponseType<BaseResponse<IReadOnlyList<UserSummaryDto>>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BaseResponse<IReadOnlyList<UserSummaryDto>>>> Lookup([FromQuery] string? search, CancellationToken cancellationToken)
+        => ToActionResult(await userService.LookupAsync(search, cancellationToken));
+
+    /// <summary>Gets a user by id (admin only).</summary>
+    [HttpGet("{id:guid}")]
+    [Authorize(Policy = Policies.AdminOnly)]
+    [ProducesResponseType<BaseResponse<UserDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BaseResponse<UserDto>>> GetById(Guid id, CancellationToken cancellationToken)
+        => ToActionResult(await userService.GetByIdAsync(id, cancellationToken));
+
+    /// <summary>Changes a user's role (admin only). Admins cannot demote themselves.</summary>
+    [HttpPatch("{id:guid}/role")]
+    [Authorize(Policy = Policies.AdminOnly)]
+    [ProducesResponseType<BaseResponse<UserDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BaseResponse<UserDto>>> ChangeRole(Guid id, ChangeUserRoleDto dto, CancellationToken cancellationToken)
+        => ToActionResult(await userService.ChangeRoleAsync(id, dto, cancellationToken));
+
+    /// <summary>Re-activates a deactivated user (admin only).</summary>
+    [HttpPost("{id:guid}/activate")]
+    [Authorize(Policy = Policies.AdminOnly)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BaseResponse>> Activate(Guid id, CancellationToken cancellationToken)
+        => ToActionResult(await userService.ActivateAsync(id, cancellationToken));
+
+    /// <summary>Deactivates a user and revokes their refresh tokens (admin only). Admins cannot deactivate themselves.</summary>
+    [HttpPost("{id:guid}/deactivate")]
+    [Authorize(Policy = Policies.AdminOnly)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BaseResponse>> Deactivate(Guid id, CancellationToken cancellationToken)
+        => ToActionResult(await userService.DeactivateAsync(id, cancellationToken));
+}
