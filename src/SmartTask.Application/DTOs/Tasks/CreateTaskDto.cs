@@ -6,7 +6,7 @@ namespace SmartTask.Application.DTOs.Tasks;
 /// Request body for <c>POST projects/{projectId}/tasks</c>. The project comes from the route. There is
 /// no status field, because new tasks always start as <see cref="TaskItemStatus.ToDo"/>.
 /// </summary>
-public sealed record CreateTaskDto
+public sealed record CreateTaskDto : ITaskDetails
 {
     public string Title { get; init; } = string.Empty;
 

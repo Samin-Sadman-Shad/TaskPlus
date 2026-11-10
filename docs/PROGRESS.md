@@ -7,7 +7,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 1    | `/create-domain`        | Done        | all   | Build ✅; Tests ✅ (53 passed) |
 | 2    | `/create-repositories`  | Done        | all   | Build ✅; Tests ✅ (53); LocalDB smoke test ✅ (40 checks); no migration yet |
 | 3    | `/create-dto`           | Done        | all   | Build ✅; Tests ✅ (53); sensitive-field grep empty; scratch mapping check ✅ (10) |
-| 4    | `/implement-validators` | Not started |       |       |
+| 4    | `/implement-validators` | Done        | all   | Build ✅; Tests ✅ (232 = 53 Domain + 179 Application) |
 
 ## Log
 
@@ -18,6 +18,35 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /implement-validators (all)
+- Packages: `FluentValidation` + `FluentValidation.DependencyInjectionExtensions` 12.2.0 in Application (no AspNetCore auto-validation).
+- Created in `src/SmartTask.Application/`:
+  - `DependencyInjection.cs`: `AddApplication()` registers all validators (`includeInternalTypes: true`) and `TryAddSingleton(TimeProvider.System)`
+  - `Common/Validation/ValidationResultExtensions`: `ToErrorDictionary()` with camelCase property paths, for the API's ValidationFilter
+  - `Validators/Common/`: RuleBuilderExtensions (NotBlank, TrimmedLength, TrimmedMaxLength, ValidPersonName, ValidEmail,
+    ValidPassword, NotInPast, OnOrAfter, ValidSortField), PageQueryValidator<T>, PersonNameValidator<T>
+  - `Validators/Auth/`: RegisterRequestDtoValidator, LoginRequestDtoValidator
+  - `Validators/Users/`: UpdateUserProfileDtoValidator, ChangeUserRoleDtoValidator, UserQueryParametersValidator
+  - `Validators/Projects/`: ProjectDetailsValidator<T>, Create/UpdateProjectDtoValidator, AddProjectMemberDtoValidator, ProjectQueryParametersValidator
+  - `Validators/Tasks/`: TaskDetailsValidator<T>, Create/UpdateTaskDtoValidator, UpdateTaskStatusDtoValidator, AssignTaskDtoValidator, TaskQueryParametersValidator
+  - `Validators/Ai/`: ImproveDescriptionRequestDtoValidator
+- Updated DTOs: added `IProjectDetails`, `ITaskDetails` and `IPersonName` (read-only interfaces). Create/Update/Register
+  DTOs implement them, so each set of shared rules lives in one abstract validator instead of being copied.
+- Created `tests/SmartTask.Application.UnitTests` (xUnit, Shouldly, FluentValidation.TestHelper, FakeTimeProvider; added to `/tests/`):
+  one file per validator, plus ValidationResultExtensionsTests and DependencyInjectionTests (every request DTO has exactly
+  one registered validator, and a new request DTO without one fails the test).
+- Build: ✅ (0 warnings) / Tests: ✅ 232 passed (53 Domain + 179 Application).
+- Decisions:
+  - Length rules measure the **trimmed** value (the domain trims before storing), so `"  ab  "` fails a 3-character minimum.
+  - `RuleLevelCascadeMode = Stop` everywhere: one message per field at a time (e.g. password rules report the first unmet requirement).
+  - Login validates only Email format and Password max length (no complexity, as required).
+  - Password must not contain the email local part, checked only when the local part is ≥ 3 characters (`MinLocalPartLengthToCompare`).
+  - Create project: StartDate may be up to 1 day in the past (`StartDateToleranceDays`). The rule is skipped when StartDate is missing, to avoid a duplicate error.
+  - `SortBy` that is blank or only whitespace is accepted (the repository then uses the default sort).
+- Open questions:
+  - Should the password rules report all unmet requirements at once instead of one at a time?
+  - Person names: digits are rejected. Confirm that's wanted (e.g. "John Smith 3rd").
 
 ### 2026-11-10 — /create-dto (all)
 - Created in `src/SmartTask.Application/DTOs/`:

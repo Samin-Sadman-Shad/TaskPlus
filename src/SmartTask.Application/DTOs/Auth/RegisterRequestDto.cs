@@ -1,10 +1,12 @@
+using SmartTask.Application.DTOs.Users;
+
 namespace SmartTask.Application.DTOs.Auth;
 
 /// <summary>
 /// Request body for <c>POST auth/register</c>. There is deliberately no role field: self-registered
 /// users are always <c>TeamMember</c>, and only an admin can change roles.
 /// </summary>
-public sealed record RegisterRequestDto
+public sealed record RegisterRequestDto : IPersonName
 {
     public string FirstName { get; init; } = string.Empty;
 

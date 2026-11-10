@@ -6,7 +6,7 @@ namespace SmartTask.Application.DTOs.Tasks;
 /// Request body for <c>PUT tasks/{id}</c>. Status and assignee are not here. They have their own
 /// endpoints (<see cref="UpdateTaskStatusDto"/>, <see cref="AssignTaskDto"/>) because they carry different permissions.
 /// </summary>
-public sealed record UpdateTaskDto
+public sealed record UpdateTaskDto : ITaskDetails
 {
     public string Title { get; init; } = string.Empty;
 

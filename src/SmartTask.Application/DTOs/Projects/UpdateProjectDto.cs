@@ -1,7 +1,7 @@
 namespace SmartTask.Application.DTOs.Projects;
 
 /// <summary>Request body for <c>PUT projects/{id}</c>. The id comes from the route. This is a full replacement of the editable fields.</summary>
-public sealed record UpdateProjectDto
+public sealed record UpdateProjectDto : IProjectDetails
 {
     public string Name { get; init; } = string.Empty;
 
