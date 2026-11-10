@@ -8,6 +8,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 2    | `/create-repositories`  | Done        | all   | Build ✅; Tests ✅ (53); LocalDB smoke test ✅ (40 checks); no migration yet |
 | 3    | `/create-dto`           | Done        | all   | Build ✅; Tests ✅ (53); sensitive-field grep empty; scratch mapping check ✅ (10) |
 | 4    | `/implement-validators` | Done        | all   | Build ✅; Tests ✅ (232 = 53 Domain + 179 Application) |
+| 5    | `/create-features`      | Done (tests not verified) | Users, Projects, Tasks, Dashboard | Build ✅; test run blocked by Windows Application Control on `SmartTask.Domain.dll` |
 
 ## Log
 
@@ -18,6 +19,40 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /create-features (Users, Projects, Tasks, Dashboard)
+- Created in `src/SmartTask.Application/`:
+  - `Common/Responses/`: IBaseResponse, BaseResponse, BaseResponse<T> (as in API-CONVENTIONS §2), ResponseMessages
+  - `Contracts/Services/`: IUserService, IProjectService, ITaskService, IDashboardService (one method per endpoint in §7, XML-documented with status codes)
+  - `Services/Authorization/`: IProjectAccessGuard, ProjectAccessGuard
+  - `Services/`: BusinessErrorHandling (DomainException → 400, ConflictException → 409), Users/UserService,
+    Projects/ProjectService, Tasks/TaskService, Dashboard/DashboardService
+  - `Common/Models/ProjectTaskCounts`
+- Updated:
+  - `AddApplication()` registers the guard and the 4 services (scoped); Application gets `Microsoft.Extensions.Logging.Abstractions` 10.0.14
+  - `ITaskItemRepository` + impl: `GetByProjectAsync` (tracked, for deleting a project) and `GetCountsByProjectAsync` (one SQL GROUP BY).
+    These close the two follow-ups from /create-dto.
+  - `IDashboardReadRepository.GetStatsAsync` + impl: new `upcomingDays` parameter, clamped in both service and repository
+  - Domain constants: `DashboardConstraints` (`UpcomingWindowDays` renamed to `DefaultUpcomingDays`; new `MinUpcomingDays` 1,
+    `MaxUpcomingDays` 30); `PagingConstraints.LookupMaxResults` 20
+- Tests: `tests/SmartTask.Application.UnitTests/Services/` (NSubstitute 6.2.0 for every contract, real ProjectAccessGuard,
+  FakeTimeProvider, `Build` entity helpers): ProjectAccessGuardTests, ProjectServiceTests, TaskServiceTests, UserServiceTests, DashboardServiceTests.
+- Build: ✅ (0 warnings, 0 errors).
+- Tests: ⚠️ **not verified.** After this change, Windows Application Control blocks loading the rebuilt `SmartTask.Domain.dll` (0x800711C7).
+  A TRX log shows all 157 failures are that load error and none is an assertion. The 114 tests that don't load Domain types pass.
+  The previously green 53 Domain tests are blocked the same way. Re-run `dotnet test SmartTask.slnx` once the policy allows the DLL.
+- Decisions:
+  - Not visible → 404, visible but not allowed → 403, everywhere. A task is visible when its project is.
+  - Managing a project needs Admin, or ProjectManager **and** owner. A demoted owner loses management rights.
+  - An assignee may change status only while still a project member. Assignees can't edit details (403).
+  - The creator isn't stored as a member row: the domain already counts the owner as a member (`Project.HasMember`).
+  - Delete project: loads its tasks and removes them with the project in one `SaveChangesAsync`.
+  - Admins can't demote or deactivate themselves (400). Deactivation revokes active refresh tokens.
+  - Admin-only and manager-only checks are repeated in the services as defence in depth (the API policies are the first line).
+  - Dashboard ProjectManager scope = **owned** projects (CLAUDE.md §4), not "own/member" as in the command text.
+- Open questions:
+  - Removing a member leaves tasks still assigned to them. Should they be unassigned automatically?
+  - Dashboard PM scope: confirm owned projects only (CLAUDE.md) vs owned + member (command text).
 
 ### 2026-11-11 — /implement-validators (all)
 - Packages: `FluentValidation` + `FluentValidation.DependencyInjectionExtensions` 12.2.0 in Application (no AspNetCore auto-validation).

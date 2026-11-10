@@ -23,6 +23,15 @@ public interface ITaskItemRepository : IRepository<TaskItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// All live tasks of a project. Tracked, so they can be removed (soft-deleted) together with the
+    /// project in one save.
+    /// </summary>
+    Task<IReadOnlyList<TaskItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Total and completed task counts for a project, computed in SQL.</summary>
+    Task<ProjectTaskCounts> GetCountsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Pending (ToDo / InProgress) tasks due between <paramref name="from"/> and <paramref name="to"/>
     /// inclusive, soonest first, including <c>Assignee</c>. Read-only.
     /// </summary>

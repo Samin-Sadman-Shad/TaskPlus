@@ -13,11 +13,14 @@ public interface IDashboardReadRepository
     /// <item><see cref="UserRole.ProjectManager"/>: projects owned by <paramref name="scopeUserId"/> and their tasks.</item>
     /// <item><see cref="UserRole.TeamMember"/>: projects the user belongs to and the tasks assigned to them.</item>
     /// </list>
+    /// Upcoming tasks are pending tasks due from <paramref name="today"/> to <paramref name="today"/> +
+    /// <paramref name="upcomingDays"/> inclusive (at most <c>DashboardConstraints.UpcomingTaskCount</c>).
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="scopeUserId"/> is <c>null</c> for a non-admin role.</exception>
     Task<DashboardStatsReadModel> GetStatsAsync(
         Guid? scopeUserId,
         UserRole role,
         DateOnly today,
+        int upcomingDays,
         CancellationToken cancellationToken = default);
 }

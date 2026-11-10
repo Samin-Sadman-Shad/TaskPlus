@@ -4,6 +4,7 @@ using SmartTask.Application.Common.Models;
 using SmartTask.Application.Contracts.Persistence;
 using SmartTask.Domain.Constants;
 using SmartTask.Domain.Entities;
+using SmartTask.Domain.Enums;
 using SmartTask.Persistence.Extensions;
 using SortFields = SmartTask.Application.Common.Models.TaskQueryParameters.SortFields;
 
@@ -89,6 +90,23 @@ internal sealed class TaskItemRepository(SmartTaskDbContext context, TimeProvide
         return query
             .ApplySorting(parameters.SortBy, parameters.SortDirection, SortMap, SortFields.Default)
             .ToPagedResultAsync(parameters.PageNumber, parameters.PageSize, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TaskItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        await Live().Where(t => t.ProjectId == projectId).ToListAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<ProjectTaskCounts> GetCountsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        // One round trip: GROUP BY over a constant gives both counts in a single row.
+        var counts = await Live()
+            .Where(t => t.ProjectId == projectId)
+            .GroupBy(_ => 1)
+            .Select(g => new ProjectTaskCounts(g.Count(), g.Count(t => t.Status == TaskItemStatus.Completed)))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return counts ?? ProjectTaskCounts.None;
     }
 
     /// <inheritdoc />

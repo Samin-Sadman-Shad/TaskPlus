@@ -19,6 +19,7 @@ internal sealed class DashboardReadRepository(SmartTaskDbContext context) : IDas
         Guid? scopeUserId,
         UserRole role,
         DateOnly today,
+        int upcomingDays,
         CancellationToken cancellationToken = default)
     {
         var (projects, tasks) = Scope(scopeUserId, role);
@@ -39,7 +40,8 @@ internal sealed class DashboardReadRepository(SmartTaskDbContext context) : IDas
 
         var overdueCount = await tasks.WhereOverdue(today).CountAsync(cancellationToken);
 
-        var upcomingUntil = today.AddDays(DashboardConstraints.UpcomingWindowDays);
+        var upcomingUntil = today.AddDays(
+            Math.Clamp(upcomingDays, DashboardConstraints.MinUpcomingDays, DashboardConstraints.MaxUpcomingDays));
         var upcoming = await (
                 from t in tasks.WherePending().Where(t => t.DueDate >= today && t.DueDate <= upcomingUntil)
                 join p in context.Projects on t.ProjectId equals p.Id
