@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>8b253d46-cf98-420c-b53c-37ed12165ac8</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartTask.Application\SmartTask.Application.csproj" />
+    <ProjectReference Include="..\SmartTask.Persistence\SmartTask.Persistence.csproj" />
+    <ProjectReference Include="..\SmartTask.Infrastructure\SmartTask.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

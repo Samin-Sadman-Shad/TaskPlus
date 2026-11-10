@@ -11,5 +11,8 @@ public interface ICurrentUserService
     /// <summary>The user's role, or <c>null</c> for anonymous requests.</summary>
     UserRole? Role { get; }
 
+    /// <summary>The client's IP address (stored on issued refresh tokens), or <c>null</c> if unknown.</summary>
+    string? IpAddress { get; }
+
     bool IsAuthenticated { get; }
 }

@@ -8,7 +8,8 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 2    | `/create-repositories`  | Done        | all   | Build ✅; Tests ✅ (53); LocalDB smoke test ✅ (40 checks); no migration yet |
 | 3    | `/create-dto`           | Done        | all   | Build ✅; Tests ✅ (53); sensitive-field grep empty; scratch mapping check ✅ (10) |
 | 4    | `/implement-validators` | Done        | all   | Build ✅; Tests ✅ (232 = 53 Domain + 179 Application) |
-| 5    | `/create-features`      | Done (tests not verified) | Users, Projects, Tasks, Dashboard | Build ✅; test run blocked by Windows Application Control on `SmartTask.Domain.dll` |
+| 5    | `/create-features`      | Done        | Users, Projects, Tasks, Dashboard | Tests verified later (2 failures found and fixed in `1b6be76`) |
+| 6    | `/implement-auth`       | Done        | all   | Build ✅; Tests ✅ (353 = 55 Domain + 276 Application + 22 Infrastructure); HTTP end-to-end on LocalDB ✅ |
 
 ## Log
 
@@ -19,6 +20,53 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /implement-auth
+- Created projects: `src/SmartTask.Infrastructure` (classlib) and `src/SmartTask.Api` (webapi, WeatherForecast and the
+  OpenApi package removed; launch ports 7180/5180; user-secrets initialised), plus `tests/SmartTask.Infrastructure.UnitTests`.
+- Domain: `User.RehashPassword(newHash)`. It upgrades the hash format on login **without** revoking sessions
+  (`ChangePasswordHash` revokes them). Two tests added.
+- Application:
+  - `Contracts/Identity/`: IPasswordHasher + PasswordCheckResult, IJwtTokenService, IRefreshTokenService, IRefreshTokenTransport;
+    `ICurrentUserService` gained `IpAddress`
+  - `Common/Models/Auth/`: AccessTokenResult, GeneratedRefreshToken (both redact secrets in `ToString()`)
+  - `Contracts/Services/IAuthService` + `Services/Auth/AuthService` (registered in `AddApplication()`); new auth messages in `ResponseMessages`
+  - Nothing to delete: no `RefreshTokenRequestDto`/`LogoutRequestDto` existed, and DOMAIN-MODEL already describes the cookie transport.
+- Infrastructure: `Identity/` JwtOptions (+ JwtOptionsValidator, ValidateOnStart, key ≥ 32 bytes), AppClaimTypes,
+  JwtTokenService (JsonWebTokenHandler, HS256), RefreshTokenService (64 random bytes, Base64Url; SHA-256 lower-hex hash),
+  PasswordHasherAdapter (Identity `PasswordHasher<User>`); `DependencyInjection.AddInfrastructure()`.
+  Packages: IdentityModel.JsonWebTokens 8.23.0, Extensions.Identity.Core 10.0.14 (pinned; it pulled 11.0.0 by default).
+- Api:
+  - Shared foundations exactly as in API-CONVENTIONS: `Controllers/BaseApiController`, `Filters/ValidationFilter`,
+    `Authorization/Policies`, `RateLimiting/RateLimitPolicies`
+  - `Identity/CurrentUserService`, `Identity/CookieRefreshTokenTransport`
+  - `Extensions/AuthenticationExtensions` (`AddJwtAuthentication`, `AddApiAuthorization`: fallback = authenticated, AdminOnly, ProjectManagement),
+    `Extensions/RateLimitingExtensions` (`global` and `auth`), `Extensions/ServiceCollectionExtensions` (`AddApiServices`),
+    `Extensions/WebApplicationExtensions` (`UseApiPipeline`)
+  - `Middleware/GlobalExceptionHandler`, `Http/ApiResponseWriter` (BaseResponse JSON outside MVC), `Controllers/AuthController`
+  - `appsettings.json`: LocalDB connection (integrated security), `Jwt` without key, `RateLimiting`
+- Tests: AuthServiceTests (17), Infrastructure tests (22: JWT claims/lifetime/signature, refresh token format/hash/expiry,
+  hasher round-trip/salt/malformed hash, options validator). Total **353 passing**.
+- End-to-end over HTTPS against a throwaway LocalDB database (created with EnsureCreated, then dropped). All checked:
+  register (201, a `role` field in the body is ignored), duplicate → 409, validation and malformed-JSON → 400 BaseResponse,
+  wrong password and unknown email → the same 401, login cookie `HttpOnly; Secure; SameSite=Strict; path=/api/v1/auth`,
+  rotation, reuse of an old token → 401 **and** the successor revoked, logout → token revoked, no-cookie logout → 204,
+  6th auth call/min → 429 with `Retry-After`. The DB holds 64-char hashes only. The app refuses to start without a signing key.
+  - Found and fixed: the sliding-window limiter gives no Retry-After metadata, so `EstimateRetryAfter` works it out from config.
+- Decisions:
+  - Middleware order: `UseAuthentication` → `UseAuthorization` → `UseRateLimiter`, as /create-api specifies
+    (so the global limiter can partition by user). /implement-auth's text put the limiter before authentication.
+  - `GlobalExceptionHandler` and `InvalidModelStateResponseFactory` added now so every error already has the BaseResponse shape.
+    /create-api reuses them. MVC's implicit `[Required]` on non-nullable strings is switched off, so FluentValidation is the only validator.
+  - Claims use short names (`MapInboundClaims = false`): `sub`, `email`, `name`, `role`, `jti`. Role/Name claim types are set to match.
+  - `AddJwtAuthentication()` takes no `IConfiguration`: it configures bearer options from the validated `IOptions<JwtOptions>`.
+- Known limitations (accepted):
+  - An access token can't be revoked before it expires (≤ 15 min), e.g. after deactivation or logout.
+  - Two simultaneous refreshes with the same cookie (two tabs) make the second look like reuse, which signs the user out everywhere.
+  - CORS is not configured yet (/create-api). With the Angular dev proxy, the cookie is same-site and works.
+  - Behind a reverse proxy, forwarded headers must be configured, or the stored IP and rate-limit partition will be the proxy's.
+- User action: `dotnet user-secrets set "Jwt:SigningKey" "<64+ random characters>" -p src/SmartTask.Api`.
+- Next: `/create-api` (it reuses the foundations above; it adds the migration, CORS, Swagger, Serilog and health checks).
 
 ### 2026-11-11 — /create-api: stopped, waiting for /implement-auth
 - Not started: `/create-api` depends on `AddJwtAuthentication`, `CurrentUserService` and `AddInfrastructure()`

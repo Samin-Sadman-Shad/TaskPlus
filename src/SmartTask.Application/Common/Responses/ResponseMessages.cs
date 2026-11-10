@@ -9,6 +9,11 @@ public static class ResponseMessages
     public const string ValidationFailed = "Validation failed.";
     public const string AuthenticationRequired = "Authentication is required.";
 
+    /// <summary>The same for unknown email, wrong password and inactive user, so login can't be used to find accounts.</summary>
+    public const string InvalidCredentials = "Invalid email or password.";
+    public const string EmailTaken = "An account with this email already exists.";
+    public const string SessionExpired = "Your session has expired. Please sign in again.";
+
     public const string UserNotFound = "User not found.";
     public const string UserNotFoundOrInactive = "User not found or inactive.";
     public const string AdminOnly = "Only administrators can perform this action.";

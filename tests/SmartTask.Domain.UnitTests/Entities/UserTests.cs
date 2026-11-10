@@ -56,6 +56,27 @@ public sealed class UserTests
     }
 
     [Fact]
+    public void RehashPassword_ReplacesHashAndKeepsSessions()
+    {
+        var user = User.Create("Ada", "Lovelace", "ada@example.com", "old-hash");
+        var active = RefreshToken.Create(user.Id, "active", Now.AddDays(7), Now.AddDays(-1), null);
+        user.AddRefreshToken(active);
+
+        user.RehashPassword("stronger-hash");
+
+        user.PasswordHash.ShouldBe("stronger-hash");
+        active.IsActive(Now).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void RehashPassword_Blank_ThrowsDomainException()
+    {
+        var user = User.Create("Ada", "Lovelace", "ada@example.com", "hash");
+
+        Should.Throw<DomainException>(() => user.RehashPassword(" "));
+    }
+
+    [Fact]
     public void AddRefreshToken_TokenForOtherUser_ThrowsDomainException()
     {
         var user = User.Create("Ada", "Lovelace", "ada@example.com", "hash");

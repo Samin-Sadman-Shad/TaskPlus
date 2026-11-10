@@ -69,6 +69,13 @@ public sealed class User : AuditableEntity
         RevokeAllRefreshTokens(now, PasswordChangedReason);
     }
 
+    /// <summary>
+    /// Replaces the stored hash with a stronger hash of the <b>same</b> password (for example after the
+    /// hashing algorithm's work factor was raised). Unlike <see cref="ChangePasswordHash"/>, it keeps
+    /// existing sessions, because the user's credentials did not change.
+    /// </summary>
+    public void RehashPassword(string newHash) => SetPasswordHash(newHash);
+
     public void Deactivate() => IsActive = false;
 
     public void Activate() => IsActive = true;
