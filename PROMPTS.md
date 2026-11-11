@@ -94,8 +94,10 @@ Rules:
 ## 3. Example Inputs and Outputs
 
 > **Illustrative examples.** These show the intended behaviour of prompt `v1` and were written by hand,
-> not captured from a model. Replace them with real outputs (labelled with the model and date) once the
-> endpoint has been run with an API key configured (`/write-docs` does this).
+> not captured from a model. No AI key was configured when the documentation was generated
+> (2026-11-11), so real outputs could not be recorded. To replace them, set `Ai:ApiKey`, call the endpoint
+> with the inputs below (the Postman request "Improve task description (AI)" is ready for this), and label
+> each output with the model and date.
 > Without a key, the API uses the deterministic fake provider; its real output is shown in example 0.
 
 ### 0. Fake provider (real output, no API key)
@@ -254,8 +256,11 @@ Provider error text is never passed on. Every failure becomes an `AiProviderExce
   human then reviews.
 - **No persistence.** The endpoint never saves anything. Applying the suggestion is a separate, normal
   task update by the user.
-- **A human stays in the loop.** The response carries both the original and the suggestion, so the
-  client can show them side by side; the user accepts, edits or rejects it. The API never applies it.
+- **A human stays in the loop.** The response carries both the original and the suggestion. The Angular
+  task dialog ([`task-form-dialog.component.ts`](client/smart-task-web/src/app/features/tasks/task-form-dialog.component.ts))
+  shows them side by side with the suggestions as tips, and nothing changes until the user clicks
+  **Accept**. **Discard** keeps the original. The accepted text is still only a form value: it is saved
+  with the normal task update when the user clicks Save. The API never applies it.
 - **No invented facts.** The prompt forbids adding names, dates, numbers, versions or technologies that
   aren't in the input. The model asks for the missing information through `suggestions` instead.
 - **No secrets or PII in logs.** Logs carry only the prompt version, model, latency, input/output lengths,
@@ -271,10 +276,12 @@ Provider error text is never passed on. Every failure becomes an `AiProviderExce
   (default 20, allowed 5–60), retries included. If the client disconnects, the call is cancelled too.
 - **Bounded cost.** Input ≤ 2000 characters, output ≤ 600 tokens (`Ai:MaxOutputTokens`).
 - **Data sent to a third party.** The title and description are sent to GitHub Models (Microsoft/GitHub
-  infrastructure), which is outside this system. Users should be told this in the UI next to the
-  "Improve with AI" button, and should not put confidential data in descriptions they send. The Swagger
-  description of the endpoint says so too. Without a key the fake provider runs, and nothing leaves the
-  server.
+  infrastructure), which is outside this system. The task dialog says so next to the "Improve with AI"
+  button and asks users not to include confidential information, and the Swagger description of the
+  endpoint says so too. Without a key the fake provider runs, and nothing leaves the server.
+- **Client-side limits.** The button stays disabled until the description has 3–2000 characters (the
+  same limits as the validator), so obviously invalid requests are never sent. AI failures (429, 502,
+  503) are shown inline in the dialog with the API's fixed message.
 
 ---
 

@@ -14,6 +14,8 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 8    | `/implement-ai`         | Done        | all   | Build ✅; Tests ✅ (457 = 55 Domain + 309 Application + 58 Infrastructure + 35 API); smoke run on LocalDB with the fake provider ✅; secret grep clean |
 | 9    | `/implement-authorization` | Done     | all   | Build ✅ (0 warnings); Tests ✅ (489 = 55 Domain + 314 Application + 58 Infrastructure + 62 API) |
 | 10   | `/deploy-backend-services` | Done     | all   | Build ✅ (0 warnings); Tests ✅ (496 = 55 Domain + 314 Application + 58 Infrastructure + 69 API); `docker compose up` ✅ (sqlserver healthy, init exit 0, api up); InitialCreate applied by `MigrateAsync` in the container; data survives down/up ✅ |
+| 11   | `/create-angular-feature` | Done     | core, auth, dashboard, projects, tasks, users | Angular 22; lint ✅; Vitest ✅ (46); build ✅; storage grep clean; not checked in a browser yet |
+| 12   | `/write-docs`           | Done        | all   | README, PROMPTS, `database/SmartTask.sql`, OpenAPI + Postman exports; Build ✅; Tests ✅ (553 backend + 46 web) |
 
 ## Log
 
@@ -24,6 +26,58 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /write-docs (all)
+- Requirements check against `docs/REQUIREMENTS.md`: every functional, security, backend and frontend item was
+  already implemented. Missing were the documentation deliverables: README.md (placeholder only), an API collection,
+  and a SQL script (migrations already existed).
+- Created: `README.md` (11 sections; endpoint table checked against the controllers, 31 = 31);
+  `database/SmartTask.sql` (idempotent script from both migrations) + `database/README.md`;
+  `docs/api/openapi.json` (exported from the running API, 23 paths); `docs/api/SmartTask.postman_collection.json`
+  (31 requests in 6 folders, collection Bearer `{{accessToken}}`, Auth folder no-auth, Login / Refresh / Change
+  password save the token, Create project / task / user save their ids, valid sample bodies with `{{password}}`-style
+  variables and generated dates); `docs/api/postman_environment.json`; `docs/api/scripts/postprocess-postman.js`.
+- Updated: `PROMPTS.md` (checked against `TaskDescriptionPrompt` v1, which matches; describes the real Accept/Discard
+  UI and client-side limits; notes why the model examples are still illustrative); the task dialog now tells users
+  that the title and description go to an external AI service (the safety section promised this).
+- Build: ✅ / Tests: ✅ (553 backend = 58 Domain + 357 Application + 60 Infrastructure + 78 API; 46 web); web lint ✅.
+- To export Swagger the API ran once with a throwaway `Jwt__SigningKey` in the process environment (no user-secrets
+  are configured on this machine); nothing was stored.
+- Not done: real AI outputs in PROMPTS.md (no `Ai:ApiKey`), screenshots, browser check of the client.
+
+### 2026-11-11 — /create-angular-feature [core, auth, dashboard, projects, tasks, users]
+- `client/smart-task-web` didn't exist, so `core` (project setup) was built first, then the five slices.
+- Setup: Angular CLI 22.2 (standalone, zoneless, OnPush by default, Vitest + jsdom), Angular Material 22,
+  angular-eslint, ng2-charts 11 / Chart.js 4. `strict` and `strictTemplates` set explicitly. `proxy.conf.json` maps
+  `/api` → `https://localhost:7180` (`secure: false`), so the `SameSite=Strict` refresh cookie (path `/api/v1/auth`)
+  works on `http://localhost:4200`. `environment.apiBaseUrl = '/api/v1'`.
+- UI: simple, white surfaces (Material theme overrides set every surface/container token to white), thin grey borders,
+  outlined form fields and cards.
+- Core: memory-only `TokenStorage`; `AuthService` (signals, single-flight `refresh()` with `shareReplay`, silent
+  refresh 1 min before expiry, session restored by `provideAppInitializer`); interceptors auth → refresh → error →
+  loading; guards `authGuard`, `guestGuard`, `roleGuard`, `passwordChangeGuard`; shell with role-filtered nav,
+  progress bar, and a sidenav that switches from side to over below 960 px.
+- Features: auth (login with `returnUrl`, register), account/change-password, dashboard (stat cards, charts in
+  `@defer (on viewport)`, 7/14/30-day upcoming list), projects (paged list, detail with members and tasks,
+  create/edit dialog, delete, add/remove member via `users/lookup`), tasks (one shared list component, detail, status
+  menu with valid transitions only, assignment, form dialog with "Improve with AI" Accept/Discard), users (admin list,
+  create with a temporary password, change role, activate/deactivate).
+- Tests (46): guards, refresh interceptor (one refresh for parallel 401s, single retry, sign-out on failure),
+  AuthService session restore, login / project / task / create-user forms (validators + 400 field mapping),
+  data-access URLs and params, and app routes (guest vs shell fall-through, role and password-change redirects).
+- Decisions / deviations:
+  - The guest routes are mounted at `''` (`/login`, `/register`) behind `guestGuard` (canMatch returns false for a
+    signed-in user), and the shell redirects `/login` and `/register` to the dashboard. This keeps `/register` at
+    the top level instead of `/login/register`.
+  - `/account/change-password` (feature `account`) and `/forbidden` were added. `roleGuard` also handles the
+    signed-out case, because canMatch runs before the shell's `authGuard`.
+  - Domain enums, status transitions and constraints are mirrored in `core/models`. The user lookup API is in
+    `core/users` because both projects and tasks use it.
+  - Project edit/delete and member actions appear only on the detail page: `ProjectSummaryDto` has no owner id.
+    The status menu is on the task detail page only, because `TaskSummaryDto` has no assignee id.
+  - AI errors are shown inline in the dialog (`SKIP_ERROR_TOAST`), not as a toast.
+  - Initial bundle budget raised to 1 MB warning / 1.5 MB error (784 kB raw, 172 kB transferred, mostly Material).
+- Not verified: not run against a live API in a browser; layouts at 375 / 768 / 1280 px were not checked visually.
 
 ### 2026-11-11 — Change password and temporary passwords for admin-created users
 - Spec: `CLAUDE.md` §4 (change own password, temporary-password rule), `DOMAIN-MODEL.md` (`User.MustChangePassword`,

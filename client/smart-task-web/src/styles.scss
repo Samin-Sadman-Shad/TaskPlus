@@ -1,0 +1,168 @@
+@use '@angular/material' as mat;
+
+// Simple, light UI: a white surface everywhere, thin grey borders instead of tinted containers.
+html {
+  height: 100%;
+  color-scheme: light;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      background: #ffffff,
+      surface: #ffffff,
+      surface-container-lowest: #ffffff,
+      surface-container-low: #ffffff,
+      surface-container: #ffffff,
+      surface-container-high: #ffffff,
+      surface-container-highest: #f5f6f8,
+    )
+  );
+  @include mat.sidenav-overrides(
+    (
+      container-shape: 0,
+    )
+  );
+
+  --app-border: #e5e7eb;
+  --app-muted: #6b7280;
+  --app-danger: #b91c1c;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  background: #ffffff;
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+}
+
+a {
+  color: var(--mat-sys-primary);
+}
+
+// Visible keyboard focus everywhere.
+:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: 2px;
+}
+
+// Cards: white with a thin border, no shadow.
+.mat-mdc-card {
+  border: 1px solid var(--app-border);
+  box-shadow: none !important;
+}
+
+// Dialogs on white with a border.
+.mat-mdc-dialog-surface {
+  border: 1px solid var(--app-border);
+}
+
+// Tables: white, thin row separators.
+.mat-mdc-table {
+  background: #ffffff;
+}
+.table-wrap {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: auto;
+}
+tr.clickable {
+  cursor: pointer;
+}
+tr.clickable:hover {
+  background: #f9fafb;
+}
+
+// Shared layout helpers.
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+
+  mat-form-field {
+    width: 200px;
+  }
+  .search {
+    flex: 1 1 240px;
+  }
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+
+  .full {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 599.98px) {
+  .filters mat-form-field {
+    width: 100%;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.card-list {
+  display: grid;
+  gap: 8px;
+}
+.item-card {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  background: #fff;
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .title {
+    font-weight: 500;
+  }
+  .meta {
+    color: var(--app-muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+}
+.muted {
+  color: var(--app-muted);
+}
+.overdue {
+  color: var(--app-danger);
+  font-weight: 500;
+}
+.form-error {
+  color: var(--app-danger);
+  margin: 0 0 12px;
+}
+.danger.mat-mdc-unelevated-button:not(:disabled) {
+  background: var(--app-danger);
+  color: #fff;
+}
+.snack-error {
+  --mat-snack-bar-container-color: #7f1d1d;
+}
+.snack-success {
+  --mat-snack-bar-container-color: #14532d;
+}
+.full-width {
+  width: 100%;
+}

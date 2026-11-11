@@ -1,0 +1,51 @@
+:host {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100%;
+  padding: 10vh 16px 32px;
+  box-sizing: border-box;
+}
+.card {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: #fff;
+  box-sizing: border-box;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mat-sys-primary);
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+h1 {
+  margin: 0 0 4px;
+  font: var(--mat-sys-headline-small);
+}
+.lead {
+  margin: 0 0 20px;
+  color: var(--app-muted);
+}
+mat-form-field {
+  width: 100%;
+}
+.submit {
+  width: 100%;
+  margin-top: 4px;
+}
+.switch {
+  margin: 16px 0 0;
+  text-align: center;
+  color: var(--app-muted);
+}
+.hint-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--app-muted);
+  font-size: 13px;
+}
