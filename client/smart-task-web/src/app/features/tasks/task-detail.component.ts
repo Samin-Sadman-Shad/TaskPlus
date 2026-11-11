@@ -8,8 +8,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, filter, of, switchMap } from 'rxjs';
+import { Observable, catchError, filter, map, of, switchMap, tap } from 'rxjs';
 import { AuthService } from '../../core/auth/auth.service';
+import { UserLookupApi } from '../../core/users/user-lookup.api';
 import { TASK_STATUS_TRANSITIONS, TaskItemStatus } from '../../core/models/enums';
 import { NotificationService } from '../../core/notifications/notification.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog.component';
@@ -114,11 +115,12 @@ import { openTaskForm } from './task-form-dialog.component';
               <div class="assign">
                 <app-user-picker
                   label="Assign to"
-                  placeholder="Project owner or member"
+                  placeholder="Type a name or email"
                   [search]="searchAssignees"
                   [excludeIds]="t.assignee ? [t.assignee.id] : []"
-                  (picked)="assign($event.id)"
+                  (picked)="assignPicked($event)"
                 />
+                <p class="hint">Picking someone who isn't a project member adds them to the project first.</p>
               </div>
             }
           </mat-card-content>
@@ -145,6 +147,7 @@ import { openTaskForm } from './task-form-dialog.component';
     dt { color: var(--app-muted); font-size: 12px; margin-top: 8px; }
     dd { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .assign { margin-top: 16px; }
+    .hint { margin: 4px 0 0; color: var(--app-muted); font-size: 12px; }
     .loading { display: grid; place-items: center; padding: 48px; }
     @media (max-width: 959.98px) { .layout { grid-template-columns: 1fr; } }
   `,
@@ -152,6 +155,7 @@ import { openTaskForm } from './task-form-dialog.component';
 export default class TaskDetailComponent {
   private readonly tasksApi = inject(TasksApi);
   private readonly projectsApi = inject(ProjectsApi);
+  private readonly lookup = inject(UserLookupApi);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
   private readonly confirm = inject(ConfirmService);
@@ -198,10 +202,26 @@ export default class TaskDetailComponent {
     this.project.hasValue() ? assignableUsers(this.project.value()) : [],
   );
 
-  /** Local filter over project owner + members for the assign autocomplete. */
-  protected readonly searchAssignees = (term: string) => {
-    const t = term.toLowerCase();
-    return of(this.assignees().filter((u) => !t || u.fullName.toLowerCase().includes(t) || u.email.toLowerCase().includes(t)));
+  /**
+   * Assign autocomplete: project owner + members first, then other active users from users/lookup
+   * (Admin / owning PM only, the same people who see this picker). The API only assigns project
+   * members, so a non-member is marked and gets added to the project when picked.
+   */
+  protected readonly searchAssignees = (term: string): Observable<UserOption[]> => {
+    const t = term.trim().toLowerCase();
+    const members = this.assignees().filter(
+      (u) => !t || u.fullName.toLowerCase().includes(t) || u.email.toLowerCase().includes(t),
+    );
+    return this.lookup.search(term.trim()).pipe(
+      map((users) => {
+        const memberIds = new Set(this.assignees().map((u) => u.id));
+        const others = users
+          .filter((u) => !memberIds.has(u.id))
+          .map(({ id, fullName, email }) => ({ id, fullName, email, note: 'Not a project member yet: will be added' }));
+        return [...members, ...others];
+      }),
+      catchError(() => of(members)),
+    );
   };
 
   protected changeStatus(status: TaskItemStatus): void {
@@ -210,6 +230,23 @@ export default class TaskDetailComponent {
 
   protected assign(assigneeId: string | null): void {
     this.run(this.tasksApi.assign(this.id(), assigneeId), assigneeId ? 'Task assigned.' : 'Task unassigned.');
+  }
+
+  /** Assigns a picked user, adding them to the project first when they aren't a member. */
+  protected assignPicked(user: UserOption): void {
+    const projectId = this.task()?.projectId;
+    if (!projectId) {
+      return;
+    }
+    if (this.assignees().some((u) => u.id === user.id)) {
+      this.assign(user.id);
+      return;
+    }
+    const request = this.projectsApi.addMember(projectId, user.id).pipe(
+      tap(() => this.project.reload()),
+      switchMap(() => this.tasksApi.assign(this.id(), user.id)),
+    );
+    this.run(request, `${user.fullName} was added to the project and assigned.`);
   }
 
   protected edit(task: TaskDto): void {
@@ -234,7 +271,7 @@ export default class TaskDetailComponent {
       });
   }
 
-  private run(request: ReturnType<TasksApi['get']>, message: string): void {
+  private run(request: Observable<TaskDto>, message: string): void {
     this.busy.set(true);
     request.pipe(catchError(() => of(null))).subscribe((updated) => {
       this.busy.set(false);

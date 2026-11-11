@@ -27,6 +27,50 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Open questions / follow-ups: …
 -->
 
+### 2026-11-11 — Web client container: whole stack with one `docker compose up`
+- Created: `client/smart-task-web/Dockerfile` (Node 24 build → `nginxinc/nginx-unprivileged:1.29-alpine`, health
+  check on `/healthz`), `client/smart-task-web/nginx/default.conf` (SPA fallback; `/api/` → `https://api:8081` inside
+  Docker; resolver so nginx follows a recreated API container; long cache for hashed files, `no-cache` for
+  `index.html`), `nginx/security-headers.conf` (CSP with scripts from `self` only, frame/nosniff/referrer/permissions
+  headers), `client/smart-task-web/.dockerignore`; `ForwardedHeadersExtensions` in the API.
+- Updated: `docker-compose.yml` (new `web` service on `WEB_PORT`, default 4200; new `smarttask-edge` network
+  172.31.250.0/24 with the web container fixed at .10; `ForwardedHeaders__KnownProxies__0` on the API);
+  `.env.example` (`WEB_PORT`); `angular.json` (production `inlineCritical: false`, so `index.html` has no inline script
+  and the CSP needs no `unsafe-inline` for scripts); README, WORKFLOW.
+- Why forwarded headers: behind nginx every request comes from the proxy, so all users would share one `auth` rate
+  limit bucket. `X-Forwarded-For` is honoured only from the configured proxy IP; `X-Forwarded-Proto` is ignored,
+  because the proxy already calls the API over HTTPS and trusting the browser's `http` caused HTTPS-redirect 307s.
+- **Bug found and fixed** (`CurrentUserService.IpAddress`): it read `IPAddress.ScopeId`, which throws for IPv4. Kestrel
+  had always produced IPv4-mapped IPv6 addresses, so it never showed; with a forwarded plain IPv4 address every login
+  returned 500. Now `ScopeId` is read only for IPv6. +5 tests (`CurrentUserServiceTests`), +3
+  (`ForwardedHeadersExtensionsTests`).
+- Build ✅ (0 warnings) / Tests ✅ (561 = 58 Domain + 357 Application + 60 Infrastructure + 86 API).
+- Verified: `docker compose up -d --build` builds and starts all four containers (web `healthy`); a browser check
+  through the web container passed 9/9 (register, sign in, refresh cookie flags `HttpOnly; Secure; SameSite=Strict;
+  Path=/api/v1/auth`, dashboard charts and icon fonts under the CSP, session restore on reload, deep-link reload,
+  role-based hiding, sign out) with no CSP violations, console errors or failed requests. It ran on `WEB_PORT=4280`,
+  because a leftover dev server from the earlier check still held 4200.
+- Test accounts left in the Docker database: `docker.check.*@smarttask.local` (TeamMember).
+- Not verified here: the local `npm` toolchain (its `node_modules` is half-removed until the leftover dev server is
+  stopped and `npm ci` is re-run), so the web lint and unit tests were not rerun after the `angular.json` change.
+  The Docker build compiled the production bundle successfully.
+
+### 2026-11-11 — Local secrets and desktop browser check
+- user-secrets (`src/SmartTask.Api`): random `Jwt:SigningKey`; `Bootstrap:Admin:*` (`admin@smarttask.local`, random
+  password). The admin was created on the next start-up. `AddUserMustChangePassword` applied to LocalDB (it was missing).
+  The two existing smoke-test users were left as they were, so the seeder (empty database only) stays off.
+- The Docker stack (`smarttask-api`, `smarttask-sqlserver`) was running and owns port 7180, so the check used a local
+  API on `https://localhost:7190` and `ng serve --port 4300` with a scratch proxy config. The API ran with raised rate
+  limits through environment variables for the test only; repo config is unchanged.
+- Playwright + Chromium, 1366 × 860, 33 scenarios across Admin / ProjectManager / TeamMember: ✅ 33/33, no unexpected
+  console or API errors. Screenshots in `docs/images/` and the README.
+- Found and fixed (client): the task filter row wrapped to two lines on desktop. "Due from/Due to" became one
+  date-range field, and filter widths were tightened. Users table cells no longer wrap.
+- Found, not changed (backend policy, documented): `auth/refresh` shares the 5/min `auth` limit with login and
+  register, and the client calls it on every full page load, so more than about five reloads a minute signs the user
+  out. Proposed fix: a separate, more generous refresh policy.
+- Web: lint ✅, unit tests ✅ (46), build ✅.
+
 ### 2026-11-11 — /write-docs (all)
 - Requirements check against `docs/REQUIREMENTS.md`: every functional, security, backend and frontend item was
   already implemented. Missing were the documentation deliverables: README.md (placeholder only), an API collection,

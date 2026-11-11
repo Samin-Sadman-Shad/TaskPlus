@@ -90,17 +90,14 @@ import { TASK_SORT_FIELDS, TaskQueryParameters, TaskSummaryDto } from './data-ac
           </mat-select>
         </mat-form-field>
       }
-      <mat-form-field subscriptSizing="dynamic">
-        <mat-label>Due from</mat-label>
-        <input matInput [matDatepicker]="fromPicker" [value]="dueFrom()" (dateChange)="patchDate('from', $event)" />
-        <mat-datepicker-toggle matIconSuffix [for]="fromPicker" aria-label="Open due from calendar" />
-        <mat-datepicker #fromPicker />
-      </mat-form-field>
-      <mat-form-field subscriptSizing="dynamic">
-        <mat-label>Due to</mat-label>
-        <input matInput [matDatepicker]="toPicker" [value]="dueTo()" [min]="dueFrom()" (dateChange)="patchDate('to', $event)" />
-        <mat-datepicker-toggle matIconSuffix [for]="toPicker" aria-label="Open due to calendar" />
-        <mat-datepicker #toPicker />
+      <mat-form-field class="due-range" subscriptSizing="dynamic">
+        <mat-label>Due between</mat-label>
+        <mat-date-range-input [rangePicker]="duePicker">
+          <input matStartDate placeholder="From" aria-label="Due from" [value]="dueFrom()" (dateChange)="patchDate('from', $event)" />
+          <input matEndDate placeholder="To" aria-label="Due to" [value]="dueTo()" (dateChange)="patchDate('to', $event)" />
+        </mat-date-range-input>
+        <mat-datepicker-toggle matIconSuffix [for]="duePicker" aria-label="Open due date range calendar" />
+        <mat-date-range-picker #duePicker />
       </mat-form-field>
       <mat-slide-toggle [checked]="query().isOverdue === true" (change)="patch({ overdue: $event.checked || null })">
         Overdue only
@@ -195,6 +192,10 @@ import { TASK_SORT_FIELDS, TaskQueryParameters, TaskSummaryDto } from './data-ac
   styles: `
     .loading { display: grid; place-items: center; padding: 40px; }
     mat-paginator { background: transparent; }
+    .filters mat-form-field { width: 150px; }
+    .filters .search { flex: 1 1 200px; }
+    .filters .due-range { width: 230px; }
+    @media (max-width: 599.98px) { .filters mat-form-field, .filters .due-range { width: 100%; } }
   `,
 })
 export class TaskListComponent {

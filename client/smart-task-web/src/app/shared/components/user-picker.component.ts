@@ -10,6 +10,8 @@ export interface UserOption {
   id: string;
   fullName: string;
   email: string;
+  /** Optional extra line under the name, e.g. what picking this user will do. */
+  note?: string;
 }
 
 export type UserSearchFn = (term: string) => Observable<UserOption[]>;
@@ -38,6 +40,9 @@ export type UserSearchFn = (term: string) => Observable<UserOption[]>;
           <mat-option [value]="user">
             <span>{{ user.fullName }}</span>
             <small class="email"> · {{ user.email }}</small>
+            @if (user.note) {
+              <small class="note">{{ user.note }}</small>
+            }
           </mat-option>
         } @empty {
           @if (term.value.length > 0) {
@@ -50,6 +55,7 @@ export type UserSearchFn = (term: string) => Observable<UserOption[]>;
   styles: `
     .field { width: 100%; }
     .email { color: var(--app-muted); }
+    .note { display: block; color: var(--app-muted); font-size: 12px; line-height: 1.2; }
   `,
 })
 export class UserPickerComponent {

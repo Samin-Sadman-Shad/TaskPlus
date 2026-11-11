@@ -139,6 +139,7 @@ export interface TaskFormDialogData {
                   <mat-option [value]="u.id">{{ u.fullName }}</mat-option>
                 }
               </mat-select>
+              <mat-hint>Only project members are listed. Anyone else can be assigned from the task page.</mat-hint>
               <mat-error><app-control-error [control]="form.controls.assigneeId" label="Assignee" /></mat-error>
             </mat-form-field>
           }

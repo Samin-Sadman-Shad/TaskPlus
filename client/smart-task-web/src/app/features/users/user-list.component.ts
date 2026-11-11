@@ -136,19 +136,19 @@ import { USER_SORT_FIELDS, UserQueryParameters, UsersApi } from './data-access/u
             </ng-container>
             <ng-container matColumnDef="role">
               <th mat-header-cell *matHeaderCellDef>Role</th>
-              <td mat-cell *matCellDef="let u">{{ u.role | enumLabel }}</td>
+              <td mat-cell *matCellDef="let u" class="nowrap">{{ u.role | enumLabel }}</td>
             </ng-container>
             <ng-container matColumnDef="status">
               <th mat-header-cell *matHeaderCellDef>Status</th>
-              <td mat-cell *matCellDef="let u" [class.muted]="!u.isActive">{{ u.isActive ? 'Active' : 'Inactive' }}</td>
+              <td mat-cell *matCellDef="let u" class="nowrap" [class.muted]="!u.isActive">{{ u.isActive ? 'Active' : 'Inactive' }}</td>
             </ng-container>
             <ng-container matColumnDef="lastLoginAt">
               <th mat-header-cell *matHeaderCellDef>Last sign-in</th>
-              <td mat-cell *matCellDef="let u">{{ u.lastLoginAt ? (u.lastLoginAt | date: 'medium') : 'Never' }}</td>
+              <td mat-cell *matCellDef="let u" class="nowrap">{{ u.lastLoginAt ? (u.lastLoginAt | date: 'MMM d, y, h:mm a') : 'Never' }}</td>
             </ng-container>
             <ng-container matColumnDef="createdAt">
               <th mat-header-cell *matHeaderCellDef mat-sort-header>Created</th>
-              <td mat-cell *matCellDef="let u">{{ u.createdAt | date: 'mediumDate' }}</td>
+              <td mat-cell *matCellDef="let u" class="nowrap">{{ u.createdAt | date: 'mediumDate' }}</td>
             </ng-container>
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef><span class="cdk-visually-hidden">Actions</span></th>
@@ -182,6 +182,7 @@ import { USER_SORT_FIELDS, UserQueryParameters, UsersApi } from './data-access/u
   styles: `
     .loading { display: grid; place-items: center; padding: 40px; }
     .small { font-size: 12px; }
+    .nowrap { white-space: nowrap; }
     .actions-cell { width: 56px; text-align: right; }
     mat-paginator { background: transparent; }
   `,

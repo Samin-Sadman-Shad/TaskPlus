@@ -89,16 +89,18 @@ Prerequisite: **Docker Desktop** (WSL 2 backend) running. `docker ps` must print
    ```
 3. **Data folders** (once): create `data` and `log` inside `SQLSERVER_DATA_DIR`.
 4. **Start:** `docker compose up -d --build`. SQL Server starts; `sqlserver-init` creates the database and the
-   app login; the API applies the EF Core migrations (`MigrateAsync`) and starts.
+   app login; the API applies the EF Core migrations (`MigrateAsync`) and starts; the `web` container builds the
+   Angular app and serves it with nginx on http://localhost:4200 (`WEB_PORT`), forwarding `/api` to the API.
 5. **First admin:** set `BOOTSTRAP_ADMIN_FIRST_NAME`, `_LAST_NAME`, `_EMAIL` and `_PASSWORD` in `.env`.
    On start-up the API creates that Admin only if no active admin exists; it never overwrites the
    password or promotes an existing account. Sign in with it, then create other users with any role
    through `POST /api/v1/users` (or promote self-registered users with `PATCH /api/v1/users/{id}/role`).
-6. **Check:** `docker compose ps` (sqlserver healthy, sqlserver-init `Exited (0)`, api `Up`) and
+6. **Check:** `docker compose ps` (sqlserver healthy, sqlserver-init `Exited (0)`, api `Up`, web `healthy`) and
    `docker compose logs api` (PowerShell: `| Select-String migration`).
 
 | What | URL |
 |------|-----|
+| Web app | http://localhost:4200 |
 | Swagger UI | https://localhost:7180/swagger |
 | API base | https://localhost:7180/api/v1 (http://localhost:5180 redirects to HTTPS) |
 | Health | https://localhost:7180/health/live, https://localhost:7180/health/ready |

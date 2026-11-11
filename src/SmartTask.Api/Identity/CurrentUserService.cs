@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Claims;
 using SmartTask.Application.Contracts.Identity;
 using SmartTask.Domain.Enums;
@@ -46,7 +47,14 @@ public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor)
                 return address.MapToIPv4().ToString();
             }
 
-            return address.ScopeId == 0 ? address.ToString() : new IPAddress(address.GetAddressBytes()).ToString();
+            // ScopeId exists only for IPv6; reading it on an IPv4 address throws (SocketException 95).
+            // Plain IPv4 is normal behind a reverse proxy, where the address comes from X-Forwarded-For.
+            if (address.AddressFamily != AddressFamily.InterNetworkV6 || address.ScopeId == 0)
+            {
+                return address.ToString();
+            }
+
+            return new IPAddress(address.GetAddressBytes()).ToString();
         }
     }
 }

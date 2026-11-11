@@ -1,5 +1,6 @@
-# SmartTask backend: SQL Server + one-shot database bootstrap + API.
-# Values come from .env (git-ignored; copy .env.example). Start: docker compose up -d --build
+# SmartTask: SQL Server + one-shot database bootstrap + API + Angular web client (nginx).
+# Values come from .env (git-ignored; copy .env.example).
+# Start everything: docker compose up -d --build   →  web: http://localhost:4200, API/Swagger: https://localhost:7180
 
 name: ${COMPOSE_PROJECT_NAME:-smarttask}
 
@@ -82,32 +83,44 @@ services:
       Bootstrap__Admin__LastName: ${BOOTSTRAP_ADMIN_LAST_NAME:-}
       Bootstrap__Admin__Email: ${BOOTSTRAP_ADMIN_EMAIL:-}
       Bootstrap__Admin__Password: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Trust X-Forwarded-For only from the web container (fixed address below), so rate limits and
+      # audit fields see the real client IP and nobody else can set it.
+      ForwardedHeaders__KnownProxies__0: 172.31.250.10
     ports:
       - "${API_HTTP_PORT:-5180}:8080"
-      - "${API_HTTPS_PORT:-7180}:8081"
+      - "${API_HTTPS_PORT:-7180}:8081"     # Swagger / Postman; the browser app goes through the web container
     volumes:
       - ${CERT_DIR:?set CERT_DIR in .env}:/https:ro
       - ./logs/api:/app/logs
     restart: unless-stopped
-    networks: [smarttask-network]
+    networks: [smarttask-network, smarttask-edge]
 
-  # Angular client: uncomment once client/smart-task-web has a Dockerfile.
-  # Its API base URL is https://localhost:${API_HTTPS_PORT}/api/v1 (the browser calls the API directly;
-  # the refresh cookie is Secure, so use HTTPS). CORS already allows http(s)://localhost:4200.
-  # smart-task-web:
-  #   build:
-  #     context: ./client/smart-task-web
-  #   image: smarttask-web
-  #   container_name: smarttask-web
-  #   depends_on: [api]
-  #   ports:
-  #     - "4200:80"
-  #   restart: unless-stopped
-  #   networks: [smarttask-network]
+  # Angular client served by nginx. nginx also forwards /api to the API over HTTPS inside Docker, so the
+  # browser sees one origin (http://localhost:4200) and the SameSite=Strict refresh cookie works without CORS.
+  web:
+    build:
+      context: ./client/smart-task-web
+    image: smarttask-web
+    container_name: smarttask-web
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-4200}:8080"
+    restart: unless-stopped
+    networks:
+      smarttask-edge:
+        ipv4_address: 172.31.250.10       # must match ForwardedHeaders__KnownProxies__0 on the api service
 
 networks:
   smarttask-network:
     name: smarttask-network
+  # Only the web container and the API. Fixed subnet so the web container has a known address.
+  smarttask-edge:
+    name: smarttask-edge
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
 
 volumes:
   # Bind volumes: the .mdf/.ldf files and the SQL Server error log live on the host under

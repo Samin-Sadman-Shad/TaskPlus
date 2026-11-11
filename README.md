@@ -54,10 +54,18 @@ anything else.
 | AI | Improve a task description (GitHub Models; a fake provider runs without a key); shown side by side, user accepts or discards | ✅ |
 | Users | Admin user list with role/status filters, create user, change role, activate/deactivate | ✅ |
 | Platform | Swagger, Serilog, health checks, rate limiting, global exception handling, consistent responses | ✅ |
-| Platform | Docker Compose for SQL Server + API | ✅ |
-| Platform | Docker image for the Angular client | ⏳ the compose service is prepared but commented out |
+| Platform | One `docker compose up` for SQL Server, API and the Angular client (nginx) | ✅ |
 
-There are no screenshots yet.
+### Screenshots (desktop, 1366 × 860)
+
+| | |
+|---|---|
+| ![Dashboard](docs/images/dashboard.png) Dashboard (ProjectManager) | ![Project detail](docs/images/project-detail.png) Project detail with members and tasks |
+| ![Improve with AI](docs/images/ai-suggestion.png) Improve with AI: original vs suggestion | ![Task detail](docs/images/task-detail.png) Task detail with status menu and assignment |
+| ![Tasks](docs/images/tasks.png) Task list with filters | ![Users](docs/images/users.png) Admin user management |
+| ![Projects](docs/images/projects.png) Project list | ![Sign in](docs/images/login.png) Sign in |
+
+The screenshots show test accounts created during the browser check (see [Testing](#9-testing)).
 
 ---
 
@@ -79,7 +87,7 @@ Versions are taken from the `.csproj` files and `client/smart-task-web/package.j
 | Charts | Chart.js 4.6 via ng2-charts 11 (lazy-loaded) |
 | Backend tests | xUnit 2.9.3, Shouldly 4.3.0, NSubstitute 6.2.0, Microsoft.AspNetCore.Mvc.Testing 10.0.14, EF Core SQLite 10.0.14 |
 | Frontend tests | Vitest 5 + jsdom (Angular CLI unit-test builder), ESLint 10 with angular-eslint 22 |
-| Containers | Docker Compose: SQL Server 2022, a one-shot init container, the API |
+| Containers | Docker Compose: SQL Server 2022, a one-shot init container, the API, and the web client (nginx-unprivileged 1.29, built with Node 24) |
 
 ---
 
@@ -144,7 +152,7 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DOMAIN-MODEL.md
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
 - [Node.js](https://nodejs.org/) LTS (developed with Node 24, npm 11)
 - SQL Server: **LocalDB** (installed with Visual Studio) for the default connection string, or any SQL
-  Server instance, or Docker (see [Run with Docker](#run-the-backend-with-docker))
+  Server instance, or Docker (see [Run everything with Docker](#run-everything-with-docker))
 - The EF Core tool, restored from `dotnet-tools.json`: `dotnet tool restore`
 
 ### Steps (local development)
@@ -218,17 +226,33 @@ All `dotnet` commands run from the repository root.
    `manager@smarttask.local` and `member@smarttask.local`, with the passwords you set in step 2.
    Otherwise register a TeamMember account, or configure a first Admin (see [Configuration](#5-configuration)).
 
-### Run the backend with Docker
+### Run everything with Docker
+
+One command starts SQL Server, the database bootstrap, the API and the Angular client:
 
 ```bash
-cp .env.example .env      # fill in every value; generate strong random secrets
+cp .env.example .env      # once: fill in every value; generate strong random secrets
 docker compose up -d --build
 ```
 
-This starts SQL Server 2022, a one-shot container that creates the database and an application login,
-and the API on `https://localhost:7180` with migrations applied on start-up and Swagger enabled. The data
-lives in volumes, so it survives `docker compose down`. Set the `BOOTSTRAP_ADMIN_*` values in `.env` to
-get a first Admin. Then run the Angular client as in step 6. Details: [docs/WORKFLOW.md](docs/WORKFLOW.md#run-with-docker).
+| Container | What it does | URL |
+|---|---|---|
+| `smarttask-web` | nginx serving the built Angular app; forwards `/api` to the API | **http://localhost:4200** (`WEB_PORT`) |
+| `smarttask-api` | ASP.NET Core API; applies migrations on start-up; Swagger on | https://localhost:7180/swagger (`API_HTTPS_PORT`) |
+| `smarttask-sqlserver` | SQL Server 2022; data kept across `docker compose down` | `localhost,1433` |
+| `smarttask-sqlserver-init` | creates the database and the application login, then exits | — |
+
+Open http://localhost:4200 and sign in. Set the `BOOTSTRAP_ADMIN_*` values in `.env` to get a first Admin.
+
+How the web container reaches the API: the browser only calls `http://localhost:4200`. nginx forwards
+`/api/*` over HTTPS inside the Docker network, so the refresh cookie (`SameSite=Strict`, path `/api/v1/auth`)
+works without CORS, exactly like the dev-server proxy. The API trusts `X-Forwarded-For` only from the web
+container's fixed address (`ForwardedHeaders:KnownProxies`), so rate limits see the real client IP and no
+client can set it. nginx adds security headers, including a Content-Security-Policy (scripts from `self`
+only); hashed build files are cached for a year and `index.html` is never cached.
+
+After code changes run `docker compose up -d --build` again; only changed images are rebuilt. Certificate and
+data-folder setup: [docs/WORKFLOW.md](docs/WORKFLOW.md#run-with-docker).
 
 ### Troubleshooting
 
@@ -239,7 +263,9 @@ get a first Admin. Then run the Angular client as in step 6. Details: [docs/WORK
 | CORS error in the browser | Only needed when the client calls the API directly (not through the proxy). Add the client's origin to `Cors:AllowedOrigins`. |
 | `A network-related or instance-specific error` | Check that LocalDB is running (`sqllocaldb start MSSQLLocalDB`) or fix the connection string. `/health/ready` returns 503 while the database is unreachable. |
 | Signed out after every page reload | The refresh cookie is `Secure` and scoped to `/api/v1/auth`. Use the proxy on `http://localhost:4200`, or HTTPS when calling the API directly. |
-| 429 Too Many Requests on login | The `auth` rate limit allows 5 requests per minute per IP. Wait a minute. |
+| 429 Too Many Requests on login, or signed out after several reloads | The `auth` rate limit allows 5 requests per minute per IP, and it includes the refresh call made on every page load. Wait a minute. |
+| `address already in use` on port 4200 | Something else (often `npm start`) uses 4200. Stop it, or set `WEB_PORT` in `.env` (e.g. `4280`). |
+| `address already in use` on port 7180 | The Docker API container already uses 7180. Stop it (`docker compose stop api`) or run the local API on another port and point the client at it (`ASPNETCORE_URLS=https://localhost:7190` plus a proxy config with that target: `npx ng serve --proxy-config <file>`). |
 
 ---
 
@@ -253,6 +279,7 @@ files.** All option classes are validated when the API starts.
 |---|---|:---:|---|
 | `ConnectionStrings:DefaultConnection` | LocalDB `SmartTask` | — | SQL Server connection string (no password in files) |
 | `Database:Password` | — | ✅ | Added to the connection string when set (used by Docker) |
+| `ForwardedHeaders:KnownProxies` | none (Docker: the web container, `172.31.250.10`) | — | Reverse-proxy IPs whose `X-Forwarded-For` is trusted; empty = the header is ignored |
 | `Database:ApplyMigrationsOnStartup` | `false` (`true` in a container) | — | Apply pending migrations at start-up |
 | `Database:MaxRetryCount` / `MaxRetryDelaySeconds` | `6` / `30` | — | SQL transient-failure retries |
 | `Jwt:Issuer` / `Jwt:Audience` | `SmartTask.Api` / `SmartTask.Web` | — | Token issuer and audience |
@@ -412,7 +439,8 @@ Dates are `yyyy-MM-dd`.
 | **Role-based authorization** | `[Authorize(Roles = …)]` on every controller with a class-level baseline, narrowed per action. The default and fallback policies require an authenticated user with a known role. Role failures return 403 `INSUFFICIENT_ROLE`. |
 | **Resource authorization** | The services check ownership, membership and assignment (`IProjectAccessGuard`). Resources the caller can't see return 404. |
 | **Temporary passwords** | An admin-set password lets the user call only `GET users/me` and `POST users/me/password`. Everything else returns 403 `PASSWORD_CHANGE_REQUIRED` until they change it. |
-| **HTTPS** | `UseHttpsRedirection` everywhere and `UseHsts` outside Development. Docker serves HTTPS on 7180. |
+| **HTTPS** | `UseHttpsRedirection` everywhere and `UseHsts` outside Development. Docker serves the API over HTTPS on 7180, and the web container reaches it over HTTPS inside the Docker network. |
+| **Reverse proxy** | `X-Forwarded-For` is honoured only from configured proxy IPs (the web container in Docker), so clients cannot spoof their IP to avoid rate limits. The web container (non-root nginx) sends a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy`. |
 | **CORS** | One named policy: only the origins in `Cors:AllowedOrigins`, with credentials. |
 | **Input validation** | FluentValidation for every request body and query object (global `ValidationFilter`), with the same length constants as the database schema. The Angular forms mirror the rules. Sort fields are whitelisted; no dynamic SQL. |
 | **Rate limiting** | Global 100/min per user or IP; `auth` 5/min per IP; `ai` 10/min per user. Rejections return 429 with `Retry-After`. |
@@ -429,7 +457,7 @@ Dates are `yyyy-MM-dd`.
 TaskPlus/
 ├── SmartTask.slnx                 solution
 ├── Directory.Build.props          shared build settings (net10.0, nullable, warnings as errors)
-├── docker-compose.yml, .env.example, docker/   SQL Server + API containers
+├── docker-compose.yml, .env.example, docker/   SQL Server, API and web containers
 ├── database/                      generated SQL script (SmartTask.sql) and how to apply it
 ├── docs/                          architecture, domain model, API conventions, workflow, progress log
 │   └── api/                       OpenAPI export, Postman collection and environment
@@ -449,7 +477,7 @@ TaskPlus/
 │   ├── SmartTask.Application.UnitTests/      services and validators
 │   ├── SmartTask.Infrastructure.UnitTests/   JWT, hashing, AI providers
 │   └── SmartTask.Api.IntegrationTests/       full HTTP pipeline with WebApplicationFactory
-└── client/smart-task-web/         Angular app
+└── client/smart-task-web/         Angular app (Dockerfile and nginx/ for the web container)
     └── src/app/
         ├── core/                  auth (AuthService, memory token storage), guards, interceptors,
         │                          http (API models, helpers), layout (shell), models (enums, limits)
@@ -487,6 +515,16 @@ npm run build
 
 Counts are from the last run on 2026-11-11.
 
+**Browser check (desktop).** The portal was also exercised end to end in Chromium (Playwright, 1366 × 860)
+against the real API and LocalDB: 33 scenarios across all three roles, all passing, with no console errors
+other than the expected ones (the 401 from the start-up session check when signed out, and a deliberate
+duplicate-email 409). Covered: return-URL redirect, generic login error, registration validation,
+admin-created user with temporary password → forced password change, project create with date-range
+validation, member lookup, AI suggestion accept/discard, task create/edit/assign, status menu offering only
+valid transitions, list filters/sort/search kept in the URL across reloads, session restore on reload,
+role-based hiding (TeamMember sees no New project / Edit / Delete; `/users` is forbidden to non-admins),
+deactivate/activate, and the not-found page. Small screens were not part of this check.
+
 ---
 
 ## 10. Agentic Development Workflow
@@ -510,10 +548,12 @@ How to use the commands: [docs/WORKFLOW.md](docs/WORKFLOW.md).
 - **No email flows:** no email verification, no "forgot password" reset.
 - **AI examples are illustrative.** PROMPTS.md shows hand-written examples for the real model, because no
   API key was configured when the documentation was written. The fake-provider output is real.
-- **The Angular client is not containerised yet.** The compose service is prepared but commented out.
-- **The Angular client hasn't been tested end-to-end in a browser against the API.** It is covered by
-  unit tests only, and the responsive layouts were not checked visually.
-- **No screenshots** in this README yet.
+- **The Docker setup is for local use.** The API container uses the local development certificate and the web container serves plain HTTP. A real deployment needs a proper certificate and HTTPS in front of the web container: the refresh cookie is `Secure`, and browsers accept it over plain HTTP only on `localhost`.
+- **Desktop only so far.** The portal was checked in a browser at desktop size; layouts below 960 px exist
+  but were not checked. The browser check is a manual script, not part of `npm test`.
+- **Refresh shares the `auth` rate limit.** `auth/refresh` uses the same 5-per-minute-per-IP bucket as login
+  and register, and the client calls it on every full page load. Reloading the page more than about five
+  times in a minute signs the user out until the window passes.
 - **Repository integration tests on SQL Server** (for example with Testcontainers) are not written; the API
   integration tests use SQLite.
 - Project and task lists don't show edit/delete actions inline, because the summary DTOs don't include the

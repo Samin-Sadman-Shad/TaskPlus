@@ -71,6 +71,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IRefreshTokenTransport, CookieRefreshTokenTransport>();
+        services.AddApiForwardedHeaders(configuration);
 
         services.AddJwtAuthentication();
         services.AddApiAuthorization();

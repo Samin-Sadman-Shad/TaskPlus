@@ -23,6 +23,7 @@ public static class WebApplicationExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        app.UseApiForwardedHeaders();   // first: the client IP must be right for everything below
         app.UseExceptionHandler();
         if (!app.Environment.IsDevelopment())
         {
