@@ -9,11 +9,12 @@ namespace SmartTask.Application.Common.Responses;
 /// </summary>
 public class BaseResponse : IBaseResponse
 {
-    protected BaseResponse(HttpStatusCode status, string? message, IReadOnlyDictionary<string, string[]>? errors)
+    protected BaseResponse(HttpStatusCode status, string? message, IReadOnlyDictionary<string, string[]>? errors, string? errorCode = null)
     {
         Status = status;
         Message = message;
         Errors = errors;
+        ErrorCode = errorCode;
     }
 
     /// <summary>Not serialized: the HTTP status line already carries it.</summary>
@@ -28,6 +29,12 @@ public class BaseResponse : IBaseResponse
 
     public string? Message { get; }
 
+    /// <summary>
+    /// A stable code from <see cref="ErrorCodes"/> for failures the client must tell apart (401/403).
+    /// Declared right after <see cref="Message"/> so it serializes there; omitted when null.
+    /// </summary>
+    public string? ErrorCode { get; }
+
     public IReadOnlyDictionary<string, string[]>? Errors { get; }
 
     public string? TraceId { get; set; }
@@ -41,9 +48,16 @@ public class BaseResponse : IBaseResponse
     public static BaseResponse ValidationFailed(IReadOnlyDictionary<string, string[]> errors) =>
         Fail(HttpStatusCode.BadRequest, ResponseMessages.ValidationFailed, errors);
 
-    public static BaseResponse Unauthorized(string message) => Fail(HttpStatusCode.Unauthorized, message);
+    /// <summary>
+    /// No default code: services also return 401 for a wrong password or an expired session, which are not
+    /// "sign in first". The pipeline challenge passes an explicit <see cref="ErrorCodes"/> value.
+    /// </summary>
+    public static BaseResponse Unauthorized(string message, string? errorCode = null) =>
+        Fail(HttpStatusCode.Unauthorized, message, errorCode: errorCode);
 
-    public static BaseResponse Forbidden(string message) => Fail(HttpStatusCode.Forbidden, message);
+    /// <summary>The default code is <see cref="ErrorCodes.ResourceForbidden"/>: services refuse access to a resource.</summary>
+    public static BaseResponse Forbidden(string message, string errorCode = ErrorCodes.ResourceForbidden) =>
+        Fail(HttpStatusCode.Forbidden, message, errorCode: errorCode);
 
     public static BaseResponse NotFound(string message) => Fail(HttpStatusCode.NotFound, message);
 
@@ -51,6 +65,6 @@ public class BaseResponse : IBaseResponse
 
     public static BaseResponse Error(string message) => Fail(HttpStatusCode.InternalServerError, message);
 
-    public static BaseResponse Fail(HttpStatusCode status, string message, IReadOnlyDictionary<string, string[]>? errors = null) =>
-        new(status, message, errors);
+    public static BaseResponse Fail(HttpStatusCode status, string message, IReadOnlyDictionary<string, string[]>? errors = null, string? errorCode = null) =>
+        new(status, message, errors, errorCode);
 }

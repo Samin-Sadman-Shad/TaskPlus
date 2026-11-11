@@ -29,7 +29,7 @@ service is missing, skip that controller and report it.
 If they don't exist, create them exactly as in API-CONVENTIONS §3–§4:
 - `Controllers/BaseApiController.cs` — `ToActionResult<TResponse>` and `ToCreatedResult<T>`
 - `Filters/ValidationFilter.cs`
-- `Authorization/Policies.cs`, `RateLimiting/RateLimitPolicies.cs` (string constants)
+- `Authorization/AppRoles.cs` (role-name constants from `UserRole`), `RateLimiting/RateLimitPolicies.cs` (string constants)
 
 If they already exist (created by `/implement-auth`), reuse them and don't duplicate.
 
@@ -39,8 +39,9 @@ One controller per feature in `src/SmartTask.Api/Controllers/`. Every controller
 - `public sealed class XController(IXService xService) : BaseApiController`, with **only** the service
   interface injected
 - `[Route("api/v1/...")]` taken exactly from API-CONVENTIONS §7
-- uses role policies from §5 on the actions that need them (`[Authorize(Policy = Policies.ProjectManagement)]`);
-  resource checks stay in the service
+- has the class-level baseline `[Authorize(Roles = AppRoles.Any)]` and narrows it on the actions that
+  need it (`[Authorize(Roles = AppRoles.Management)]`), per API-CONVENTIONS §5; resource checks stay
+  in the service. `/implement-authorization` owns these rules
 - each action is **a single expression**:
   ```csharp
   => ToActionResult(await taskService.UpdateStatusAsync(id, dto, cancellationToken));
@@ -90,7 +91,7 @@ SmartTask.Api/
 | **HTTPS** | `UseHttpsRedirection()`; `UseHsts()` outside Development |
 | **Security headers** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` for API responses (skip the CSP on the Swagger UI path) |
 | **Rate limiting** | `global`, `auth` and `ai` policies from API-CONVENTIONS §6, with limits bound from the `RateLimiting` config section. `OnRejected` → 429 `BaseResponse` + `Retry-After` |
-| **Auth** | Reuse `AddJwtAuthentication` from `/implement-auth`. Fallback policy = authenticated user |
+| **Auth** | Reuse `AddJwtAuthentication` from `/implement-auth` and `AddApiAuthorization` (default + fallback policy = authenticated user with a known role; see `/implement-authorization`) |
 | **Health checks** | `AddHealthChecks().AddDbContextCheck<SmartTaskDbContext>(tags: ["ready"])`. Map `/health/live` (no checks) and `/health/ready` (tag `ready`), both `[AllowAnonymous]` + `DisableRateLimiting()`, with a JSON response writer |
 | **Composition** | `builder.Services.AddApplication().AddPersistence(config).AddInfrastructure(config).AddApiServices(config, env)` |
 | **Request limits** | `Kestrel.Limits.MaxRequestBodySize = 1 MB` |
@@ -141,7 +142,7 @@ Then run the API and check `/swagger` loads and `/health/ready` returns Healthy 
 start SQL Server if it isn't reachable).
 
 Self-check, report ✅/❌:
-- [ ] Every endpoint in API-CONVENTIONS §7 within scope exists with the exact route, verb and policy
+- [ ] Every endpoint in API-CONVENTIONS §7 within scope exists with the exact route, verb and roles
 - [ ] All controllers inherit `BaseApiController`, inject only service interfaces, and have one-line actions
 - [ ] Every error path returns the `BaseResponse` shape (validation, binding, 401, 403, 429, 500)
 - [ ] CORS origins from config, credentials allowed, no wildcard
@@ -152,5 +153,5 @@ Self-check, report ✅/❌:
 ## 6. Finish
 
 1. Update `docs/PROGRESS.md`.
-2. Print the endpoint table (verb, route, policy) and how to run the API.
+2. Print the endpoint table (verb, route, roles) and how to run the API.
 3. Suggested commit: `feat(api): thin controllers, base controller mapping and host configuration`.

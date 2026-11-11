@@ -12,6 +12,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 6    | `/implement-auth`       | Done        | all   | Build ✅; Tests ✅ (353 = 55 Domain + 276 Application + 22 Infrastructure); HTTP end-to-end on LocalDB ✅ |
 | 7    | `/create-api`           | Done        | all (AiController pending /implement-ai) | Build ✅; Tests ✅ (382, +29 API integration); InitialCreate migration applied to LocalDB; /swagger and /health/ready ✅ |
 | 8    | `/implement-ai`         | Done        | all   | Build ✅; Tests ✅ (457 = 55 Domain + 309 Application + 58 Infrastructure + 35 API); smoke run on LocalDB with the fake provider ✅; secret grep clean |
+| 9    | `/implement-authorization` | Done     | all   | Build ✅ (0 warnings); Tests ✅ (489 = 55 Domain + 314 Application + 58 Infrastructure + 62 API) |
 
 ## Log
 
@@ -22,6 +23,33 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /implement-authorization
+- Created: `Api/Authorization/AppRoles.cs` (role names from `UserRole` via `nameof`; `Management`, `Any`, `All`),
+  `Api/Authorization/ApiAuthorizationResultHandler.cs` (global `IAuthorizationMiddlewareResultHandler`: 403 `INSUFFICIENT_ROLE`),
+  `Application/Common/Responses/ErrorCodes.cs`, `Application/Common/Exceptions/ForbiddenAccessException.cs`,
+  `Application/Common/Exceptions/UnauthenticatedException.cs`.
+- Deleted: `Api/Authorization/Policies.cs` (named policies `AdminOnly` / `ProjectManagement` replaced by `[Authorize(Roles = ...)]`).
+- Updated:
+  - `AuthenticationExtensions`: default + fallback policy = authenticated user with a known role; handler registered;
+    `OnForbidden` removed; `OnChallenge` now sets `AUTH_REQUIRED` / `TOKEN_EXPIRED` / `TOKEN_INVALID`.
+  - `BaseResponse` / `BaseResponse<T>` / `IBaseResponse`: `ErrorCode` (after `message`, omitted when null);
+    `Forbidden` defaults to `RESOURCE_FORBIDDEN`; `Unauthorized` and `Fail` take an optional code.
+  - `ResponseMessages`: `TokenExpired`, `TokenInvalid`, `InsufficientRole`.
+  - `GlobalExceptionHandler`: `ForbiddenAccessException` → 403 (its code), `UnauthenticatedException` → 401 `AUTH_REQUIRED`.
+  - Controllers: class-level `[Authorize(Roles = AppRoles.Any)]` + 403 response type on Users, Projects, Tasks, Dashboard, Ai;
+    action-level `Admin` / `Management` only where the matrix narrows it.
+  - Docs: API-CONVENTIONS §2/§3/§4/§5, `create-api.md`, `WORKFLOW.md`; comments in `UserService`, `ChangeUserRoleDtoValidator`, `AuthFlowTests`.
+  - Tests: `AuthorizationTests` (18 HTTP cases), `AuthorizationMetadataTests` (AppRoles ↔ UserRole sync, controller attributes,
+    exception mapping), `BaseResponseErrorCodeTests`. `SqliteModelCustomizer` now gives row-version columns a `randomblob(8)`
+    default; before, no integration test could create a project or task on SQLite.
+- Build: ✅ (0 warnings, 0 errors) / Tests: ✅ (489 passed). Verify greps (`Policy = `, `OnForbidden`, `User.FindFirst` in controllers) empty.
+- Deviation from the command: `Unauthorized(...)` has **no** default code (the command said `AUTH_REQUIRED`), because login
+  ("Invalid email or password.") and refresh failures also return 401. Only the pipeline challenge sets a 401 code.
+- Open questions / follow-ups:
+  - Optional: per-request "user still active / role unchanged" check (security-stamp claim + short-lived cache), would use `ACCOUNT_INACTIVE`.
+  - The services' own role checks (`UserService` AdminOnly/ManagerOnly, `ProjectService` ManagerOnly) are now unreachable over HTTP and
+    would report `RESOURCE_FORBIDDEN`; pass `ErrorCodes.InsufficientRole` there if they are kept (services were out of scope).
 
 ### 2026-11-11 — /implement-ai
 - Endpoint `POST api/v1/ai/task-descriptions/improve` (`AiController`, one line, `ai` rate-limit policy, which already existed from /create-api;

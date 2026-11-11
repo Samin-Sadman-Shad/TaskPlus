@@ -14,7 +14,9 @@ namespace SmartTask.Api.Controllers;
 /// The service decides who may change which task.
 /// </summary>
 [Route("api/v1")]
+[Authorize(Roles = AppRoles.Any)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status429TooManyRequests)]
 public sealed class TasksController(ITaskService taskService) : BaseApiController
 {
@@ -28,10 +30,9 @@ public sealed class TasksController(ITaskService taskService) : BaseApiControlle
 
     /// <summary>Creates a task in the project. New tasks start as ToDo.</summary>
     [HttpPost("projects/{projectId:guid}/tasks")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType<BaseResponse<TaskDto>>(StatusCodes.Status201Created)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<TaskDto>>> Create(Guid projectId, CreateTaskDto dto, CancellationToken cancellationToken)
@@ -53,10 +54,9 @@ public sealed class TasksController(ITaskService taskService) : BaseApiControlle
 
     /// <summary>Replaces a task's title, description, priority and due date.</summary>
     [HttpPut("tasks/{id:guid}")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType<BaseResponse<TaskDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<TaskDto>>> Update(Guid id, UpdateTaskDto dto, CancellationToken cancellationToken)
@@ -64,9 +64,8 @@ public sealed class TasksController(ITaskService taskService) : BaseApiControlle
 
     /// <summary>Deletes a task (soft delete).</summary>
     [HttpDelete("tasks/{id:guid}")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse>> Delete(Guid id, CancellationToken cancellationToken)
@@ -76,7 +75,6 @@ public sealed class TasksController(ITaskService taskService) : BaseApiControlle
     [HttpPatch("tasks/{id:guid}/status")]
     [ProducesResponseType<BaseResponse<TaskDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<TaskDto>>> UpdateStatus(Guid id, UpdateTaskStatusDto dto, CancellationToken cancellationToken)
@@ -84,10 +82,9 @@ public sealed class TasksController(ITaskService taskService) : BaseApiControlle
 
     /// <summary>Assigns the task to a project member, or unassigns it when the assignee id is null.</summary>
     [HttpPatch("tasks/{id:guid}/assignee")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType<BaseResponse<TaskDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<TaskDto>>> Assign(Guid id, AssignTaskDto dto, CancellationToken cancellationToken)

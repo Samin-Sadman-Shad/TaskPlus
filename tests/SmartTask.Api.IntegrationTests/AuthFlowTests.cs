@@ -41,7 +41,7 @@ public sealed class AuthFlowTests(SmartTaskApiFactory factory)
         var me = await (await client.GetAsync("/api/v1/users/me")).ShouldBeEnvelopeAsync(200);
         me.GetProperty("data").GetProperty("email").GetString().ShouldBe(email);
 
-        // A team member is authenticated but not an admin: the AdminOnly policy answers 403 in the envelope.
+        // A team member is authenticated but not an admin: the Admin role requirement answers 403 in the envelope.
         await (await client.GetAsync("/api/v1/users")).ShouldBeEnvelopeAsync(403);
 
         var refreshed = await client.PostAsync("/api/v1/auth/refresh", null);

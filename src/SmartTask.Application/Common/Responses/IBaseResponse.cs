@@ -16,6 +16,9 @@ public interface IBaseResponse
 
     IReadOnlyDictionary<string, string[]>? Errors { get; }
 
+    /// <summary>A stable machine-readable code from <see cref="ErrorCodes"/>, or <c>null</c> (omitted from JSON).</summary>
+    string? ErrorCode { get; }
+
     /// <summary>Set by <c>BaseApiController</c> or the exception handler from <c>HttpContext.TraceIdentifier</c>.</summary>
     string? TraceId { get; set; }
 }

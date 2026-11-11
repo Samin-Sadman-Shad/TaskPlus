@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using SmartTask.Api.Authorization;
 using SmartTask.Api.RateLimiting;
 using SmartTask.Application.Common.Responses;
 using SmartTask.Application.Contracts.Services;
@@ -9,7 +11,9 @@ namespace SmartTask.Api.Controllers;
 
 /// <summary>AI assistance. Any signed-in user may call it; it never saves anything.</summary>
 [Route("api/v1/ai")]
+[Authorize(Roles = AppRoles.Any)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status429TooManyRequests)]
 public sealed class AiController(IAiService aiService) : BaseApiController
 {

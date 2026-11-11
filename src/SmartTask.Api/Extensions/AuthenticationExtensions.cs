@@ -6,7 +6,6 @@ using Microsoft.Net.Http.Headers;
 using SmartTask.Api.Authorization;
 using SmartTask.Api.Http;
 using SmartTask.Application.Common.Responses;
-using SmartTask.Domain.Enums;
 using SmartTask.Infrastructure.Identity;
 
 namespace SmartTask.Api.Extensions;
@@ -17,8 +16,8 @@ public static class AuthenticationExtensions
 
     /// <summary>
     /// JWT bearer authentication. Validation uses the same <see cref="JwtOptions"/> (and the same key)
-    /// that issues the tokens. Challenges and forbidden results return a <see cref="BaseResponse"/>
-    /// body, like every other error.
+    /// that issues the tokens. A challenge returns a <see cref="BaseResponse"/> body with an
+    /// <see cref="ErrorCodes"/> value, like every other error.
     /// </summary>
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services)
     {
@@ -45,29 +44,32 @@ public static class AuthenticationExtensions
                     NameClaimType = AppClaimTypes.Name,
                     RoleClaimType = AppClaimTypes.Role,
                 };
-                bearer.Events = new JwtBearerEvents
-                {
-                    OnChallenge = WriteUnauthorizedAsync,
-                    OnForbidden = context => ApiResponseWriter.WriteAsync(
-                        context.HttpContext,
-                        BaseResponse.Forbidden("You do not have permission to perform this action."),
-                        context.HttpContext.RequestAborted),
-                };
+                // 403s are written by ApiAuthorizationResultHandler, so only the challenge is customised here.
+                bearer.Events = new JwtBearerEvents { OnChallenge = WriteUnauthorizedAsync };
             });
 
         return services;
     }
 
     /// <summary>
-    /// Every endpoint requires an authenticated user unless it opts out with <c>[AllowAnonymous]</c>.
-    /// Role policies: <see cref="Policies.AdminOnly"/> and <see cref="Policies.ProjectManagement"/>.
+    /// Role-based authorization. The default policy (a bare <c>[Authorize]</c>) and the fallback policy
+    /// (an endpoint with no attribute at all) both require an authenticated user with one of the known
+    /// <see cref="AppRoles"/>, so a token with no role or an unknown role is refused everywhere.
+    /// Endpoints narrow this with <c>[Authorize(Roles = AppRoles.X)]</c>; anonymous ones opt out with
+    /// <c>[AllowAnonymous]</c>. Role failures are written by <see cref="ApiAuthorizationResultHandler"/>.
     /// </summary>
     public static IServiceCollection AddApiAuthorization(this IServiceCollection services)
     {
+        var knownRoleUser = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .RequireRole(AppRoles.All)
+            .Build();
+
         services.AddAuthorizationBuilder()
-            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
-            .AddPolicy(Policies.AdminOnly, policy => policy.RequireRole(nameof(UserRole.Admin)))
-            .AddPolicy(Policies.ProjectManagement, policy => policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.ProjectManager)));
+            .SetDefaultPolicy(knownRoleUser)
+            .SetFallbackPolicy(knownRoleUser);
+
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationResultHandler>();
 
         return services;
     }
@@ -78,10 +80,14 @@ public static class AuthenticationExtensions
         context.HandleResponse();
         context.Response.Headers[HeaderNames.WWWAuthenticate] = JwtBearerDefaults.AuthenticationScheme;
 
-        var message = context.AuthenticateFailure is SecurityTokenExpiredException
-            ? "The access token has expired."
-            : ResponseMessages.AuthenticationRequired;
+        // The code lets the client tell "refresh the token" apart from "sign in again".
+        var response = context.AuthenticateFailure switch
+        {
+            null => BaseResponse.Unauthorized(ResponseMessages.AuthenticationRequired, ErrorCodes.AuthenticationRequired),
+            SecurityTokenExpiredException => BaseResponse.Unauthorized(ResponseMessages.TokenExpired, ErrorCodes.TokenExpired),
+            _ => BaseResponse.Unauthorized(ResponseMessages.TokenInvalid, ErrorCodes.TokenInvalid),
+        };
 
-        return ApiResponseWriter.WriteAsync(context.HttpContext, BaseResponse.Unauthorized(message), context.HttpContext.RequestAborted);
+        return ApiResponseWriter.WriteAsync(context.HttpContext, response, context.HttpContext.RequestAborted);
     }
 }

@@ -13,7 +13,7 @@ using SmartTask.Domain.Enums;
 namespace SmartTask.Application.Services.Users;
 
 /// <remarks>
-/// The admin-only endpoints are also protected by the <c>AdminOnly</c> policy in the API. The checks
+/// The admin-only endpoints are also protected by <c>[Authorize(Roles = AppRoles.Admin)]</c> in the API. The checks
 /// here are defence in depth, so the service is safe whatever calls it.
 /// </remarks>
 public sealed class UserService(

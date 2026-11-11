@@ -32,6 +32,7 @@ Authentication
 Use cases and API
   6  /create-features                Users · Projects · Tasks · Dashboard services
   7  /create-api                     controllers + host setup; adds the initial migration
+     /implement-authorization        role attributes · global authz handler · 401/403 error codes
 AI
   8  /implement-ai                   + PROMPTS.md
 Frontend
@@ -53,12 +54,13 @@ Deliverables
 | `/implement-auth` | Domain, repositories, Auth DTOs and validators |
 | `/create-features` | repositories, DTOs (for that feature) |
 | `/create-api` | services (skips controllers whose service is missing) |
+| `/implement-authorization` | controllers, the JWT setup and `BaseResponse` |
 | `/implement-ai` | AI DTOs and validator; API foundations are created if missing |
 | `/create-angular-feature core` | API endpoints to call (it can be built earlier against the documented contract) |
 | `/create-angular-feature <slice>` | `core` |
 | `/write-docs` | a building solution; `postman` needs a runnable API |
 
-Shared building blocks (`BaseResponse`, `BaseApiController`, `ValidationFilter`, policies) are created
+Shared building blocks (`BaseResponse`, `BaseApiController`, `ValidationFilter`, `AppRoles`) are created
 by whichever command needs them first, always from `docs/API-CONVENTIONS.md`, so the order between
 `/implement-auth`, `/create-api` and `/implement-ai` doesn't matter.
 

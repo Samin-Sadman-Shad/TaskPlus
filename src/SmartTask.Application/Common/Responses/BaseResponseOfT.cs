@@ -9,8 +9,8 @@ namespace SmartTask.Application.Common.Responses;
 /// </remarks>
 public sealed class BaseResponse<T> : BaseResponse
 {
-    private BaseResponse(HttpStatusCode status, T? data, string? message, IReadOnlyDictionary<string, string[]>? errors)
-        : base(status, message, errors)
+    private BaseResponse(HttpStatusCode status, T? data, string? message, IReadOnlyDictionary<string, string[]>? errors, string? errorCode = null)
+        : base(status, message, errors, errorCode)
     {
         Data = data;
     }
@@ -26,9 +26,11 @@ public sealed class BaseResponse<T> : BaseResponse
     public static new BaseResponse<T> ValidationFailed(IReadOnlyDictionary<string, string[]> errors) =>
         Fail(HttpStatusCode.BadRequest, ResponseMessages.ValidationFailed, errors);
 
-    public static new BaseResponse<T> Unauthorized(string message) => Fail(HttpStatusCode.Unauthorized, message);
+    public static new BaseResponse<T> Unauthorized(string message, string? errorCode = null) =>
+        Fail(HttpStatusCode.Unauthorized, message, errorCode: errorCode);
 
-    public static new BaseResponse<T> Forbidden(string message) => Fail(HttpStatusCode.Forbidden, message);
+    public static new BaseResponse<T> Forbidden(string message, string errorCode = ErrorCodes.ResourceForbidden) =>
+        Fail(HttpStatusCode.Forbidden, message, errorCode: errorCode);
 
     public static new BaseResponse<T> NotFound(string message) => Fail(HttpStatusCode.NotFound, message);
 
@@ -36,6 +38,6 @@ public sealed class BaseResponse<T> : BaseResponse
 
     public static new BaseResponse<T> Error(string message) => Fail(HttpStatusCode.InternalServerError, message);
 
-    public static new BaseResponse<T> Fail(HttpStatusCode status, string message, IReadOnlyDictionary<string, string[]>? errors = null) =>
-        new(status, default, message, errors);
+    public static new BaseResponse<T> Fail(HttpStatusCode status, string message, IReadOnlyDictionary<string, string[]>? errors = null, string? errorCode = null) =>
+        new(status, default, message, errors, errorCode);
 }

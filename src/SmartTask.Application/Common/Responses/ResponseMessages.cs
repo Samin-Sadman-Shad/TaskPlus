@@ -8,6 +8,11 @@ public static class ResponseMessages
 {
     public const string ValidationFailed = "Validation failed.";
     public const string AuthenticationRequired = "Authentication is required.";
+    public const string TokenExpired = "The access token has expired.";
+    public const string TokenInvalid = "The access token is invalid.";
+
+    /// <summary>Returned for a role failure. It deliberately doesn't say which roles would be allowed.</summary>
+    public const string InsufficientRole = "You do not have permission to perform this action.";
 
     /// <summary>The same for unknown email, wrong password and inactive user, so login can't be used to find accounts.</summary>
     public const string InvalidCredentials = "Invalid email or password.";

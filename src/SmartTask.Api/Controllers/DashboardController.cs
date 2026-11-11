@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmartTask.Api.Authorization;
 using SmartTask.Application.Common.Responses;
 using SmartTask.Application.Contracts.Services;
 using SmartTask.Application.DTOs.Dashboard;
@@ -8,7 +10,9 @@ namespace SmartTask.Api.Controllers;
 
 /// <summary>Dashboard statistics, scoped to the caller's role.</summary>
 [Route("api/v1/dashboard")]
+[Authorize(Roles = AppRoles.Any)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status429TooManyRequests)]
 public sealed class DashboardController(IDashboardService dashboardService) : BaseApiController
 {

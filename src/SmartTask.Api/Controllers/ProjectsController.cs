@@ -9,11 +9,14 @@ using SmartTask.Application.DTOs.Projects;
 namespace SmartTask.Api.Controllers;
 
 /// <summary>
-/// Projects and their members. Write actions require the <c>ProjectManagement</c> policy (admin or
-/// project manager). The service then checks that a project manager owns the project.
+/// Projects and their members. Any role may read (the service scopes what each user sees). Write
+/// actions require the Admin or ProjectManager role; the service then checks that a project manager
+/// owns the project.
 /// </summary>
 [Route("api/v1/projects")]
+[Authorize(Roles = AppRoles.Any)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<BaseResponse>(StatusCodes.Status429TooManyRequests)]
 public sealed class ProjectsController(IProjectService projectService) : BaseApiController
 {
@@ -33,20 +36,18 @@ public sealed class ProjectsController(IProjectService projectService) : BaseApi
 
     /// <summary>Creates a project owned by the caller.</summary>
     [HttpPost]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType<BaseResponse<ProjectDto>>(StatusCodes.Status201Created)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<ProjectDto>>> Create(CreateProjectDto dto, CancellationToken cancellationToken)
         => ToCreatedResult(await projectService.CreateAsync(dto, cancellationToken), nameof(GetById), p => new { id = p.Id });
 
     /// <summary>Replaces a project's name, description and dates.</summary>
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType<BaseResponse<ProjectDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse<ProjectDto>>> Update(Guid id, UpdateProjectDto dto, CancellationToken cancellationToken)
@@ -54,9 +55,8 @@ public sealed class ProjectsController(IProjectService projectService) : BaseApi
 
     /// <summary>Deletes a project and its tasks (soft delete).</summary>
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse>> Delete(Guid id, CancellationToken cancellationToken)
@@ -64,10 +64,9 @@ public sealed class ProjectsController(IProjectService projectService) : BaseApi
 
     /// <summary>Adds an active user to the project. Adding an existing member does nothing.</summary>
     [HttpPost("{id:guid}/members")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse>> AddMember(Guid id, AddProjectMemberDto dto, CancellationToken cancellationToken)
@@ -75,10 +74,9 @@ public sealed class ProjectsController(IProjectService projectService) : BaseApi
 
     /// <summary>Removes a member from the project. The owner cannot be removed.</summary>
     [HttpDelete("{id:guid}/members/{userId:guid}")]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType<BaseResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<BaseResponse>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BaseResponse>> RemoveMember(Guid id, Guid userId, CancellationToken cancellationToken)

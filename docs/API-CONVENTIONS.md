@@ -34,6 +34,7 @@ public interface IBaseResponse
     bool Success { get; }
     string? Message { get; }
     IReadOnlyDictionary<string, string[]>? Errors { get; }
+    string? ErrorCode { get; }          // stable code from ErrorCodes, null when not needed
     string? TraceId { get; set; }
 }
 ```
@@ -48,13 +49,17 @@ public interface IBaseResponse
 | `Success`      | computed: `2xx`                                                        |
 | `Message`      | short human-readable text; never stack traces or internal details     |
 | `Errors`       | field → messages (camelCase keys) for validation failures; otherwise null |
+| `ErrorCode`    | machine-readable code from `ErrorCodes` (§5) for 401/403; serialised right after `message`; omitted when null |
 | `TraceId`      | set by `BaseApiController` / exception handler from `HttpContext.TraceIdentifier` |
 | `Data`         | payload (generic only); null on failure                               |
 
 Static factories (both classes; the generic versions return `BaseResponse<T>`):
 `Ok(data)`, `Created(data)`, `NoContent()`, `BadRequest(message)`,
-`ValidationFailed(errors)`, `Unauthorized(message)`, `Forbidden(message)`, `NotFound(message)`,
-`Conflict(message)`, `Error(message)`, `Fail(HttpStatusCode, message, errors?)`.
+`ValidationFailed(errors)`, `Unauthorized(message, errorCode? = null)`,
+`Forbidden(message, errorCode = RESOURCE_FORBIDDEN)`, `NotFound(message)`,
+`Conflict(message)`, `Error(message)`, `Fail(HttpStatusCode, message, errors?, errorCode?)`.
+`Unauthorized` has no default code on purpose: services also return 401 for a wrong password or an
+expired refresh session, which are not "sign in first".
 Constructors are `protected`/`private` — callers always use factories.
 
 Serialised shape (camelCase, nulls omitted):
@@ -141,6 +146,7 @@ Why it deviates from a plain switch:
 
 ```csharp
 [Route("api/v1/projects")]
+[Authorize(Roles = AppRoles.Any)]
 public sealed class ProjectsController(IProjectService projectService) : BaseApiController
 {
     [HttpGet("{id:guid}")]
@@ -150,7 +156,7 @@ public sealed class ProjectsController(IProjectService projectService) : BaseApi
         => ToActionResult(await projectService.GetByIdAsync(id, cancellationToken));
 
     [HttpPost]
-    [Authorize(Policy = Policies.ProjectManagement)]
+    [Authorize(Roles = AppRoles.Management)]           // narrows the class-level [Authorize(Roles = AppRoles.Any)]
     public async Task<ActionResult<BaseResponse<ProjectDto>>> Create(CreateProjectDto dto, CancellationToken cancellationToken)
         => ToCreatedResult(await projectService.CreateAsync(dto, cancellationToken), nameof(GetById), p => new { id = p.Id });
 }
@@ -166,8 +172,9 @@ Every non-controller error path also returns the `BaseResponse` shape:
 |-------------------------------------|----------------------------------------------------------------|
 | FluentValidation                    | `ValidationFilter` (global `IAsyncActionFilter`) → 400         |
 | Model binding / malformed JSON      | `ApiBehaviorOptions.InvalidModelStateResponseFactory` → 400    |
-| Unauthenticated                     | `JwtBearerEvents.OnChallenge` → 401                            |
-| Authenticated but wrong role        | `JwtBearerEvents.OnForbidden` → 403                            |
+| Unauthenticated                     | `JwtBearerEvents.OnChallenge` → 401 `AUTH_REQUIRED` / `TOKEN_EXPIRED` / `TOKEN_INVALID` |
+| Authenticated but wrong/unknown role | `ApiAuthorizationResultHandler` (`IAuthorizationMiddlewareResultHandler`) → 403 `INSUFFICIENT_ROLE` |
+| `ForbiddenAccessException` / `UnauthenticatedException` | `GlobalExceptionHandler` → 403 (its code) / 401 `AUTH_REQUIRED`, logged at Warning |
 | Rate limited                        | `RateLimiterOptions.OnRejected` → 429 + `Retry-After`          |
 | Unhandled exception                 | `GlobalExceptionHandler : IExceptionHandler` → 500 (logged with trace id, generic message) |
 | `DomainException` that escaped      | same handler → 400                                             |
@@ -182,13 +189,46 @@ ignored.
 
 ## 5. Authorization
 
-- **Fallback policy** requires an authenticated user, so everything is protected by default.
-  Anonymous endpoints opt out with `[AllowAnonymous]`.
-- Named policies in `SmartTask.Api/Authorization/Policies.cs`:
-  - `AdminOnly` → role `Admin`
-  - `ProjectManagement` → roles `Admin`, `ProjectManager`
-- **Resource-level** checks (owner, member, assignee) happen in the **services** through
-  `IProjectAccessGuard` (see `/create-features`), because they need data.
+Two layers, kept separate:
+
+| Layer | Question | Where | Failure |
+|---|---|---|---|
+| **Role** | May this *kind* of user call the endpoint? | `[Authorize(Roles = ...)]` + default/fallback policy | 403 `INSUFFICIENT_ROLE` |
+| **Resource** | May *this* user touch *this* project/task (owner, member, assignee)? | `IProjectAccessGuard` in the services (`/create-features`) | 404 if not visible, 403 `RESOURCE_FORBIDDEN` |
+
+- **Role names** live in `SmartTask.Api/Authorization/AppRoles.cs`, built from `UserRole` with `nameof`:
+  `Admin`, `ProjectManager`, `TeamMember`, `Management` (Admin, ProjectManager), `Any` (all three) and
+  the `All` list. The token's `role` claim is the enum **name**; matching is ordinal and case-sensitive.
+  A unit test keeps `AppRoles` in sync with `UserRole`.
+- **Placement:** every controller except `AuthController` has a class-level baseline
+  `[Authorize(Roles = AppRoles.Any)]`. Actions add `[Authorize(Roles = AppRoles.Admin | AppRoles.Management)]`
+  only to narrow it (all `[Authorize]` attributes must pass, so an action can't widen the baseline).
+  No named policies for roles.
+- **Default and fallback policy:** authenticated **and** one of the known roles. A token with no role or
+  an unknown role is refused everywhere. Anonymous endpoints (Auth, health) opt out with `[AllowAnonymous]`.
+- **Failures:** `ApiAuthorizationResultHandler` writes every role failure as a `BaseResponse`; the JWT
+  `OnChallenge` event writes every 401. No custom middleware: the policy system already applies the
+  shared checks globally.
+- **Not done (follow-up):** a per-request "user still active / role unchanged" check. The stale window is
+  bounded by the 15-minute access token, refresh-token revocation on deactivation, and the guard's role checks.
+
+### Error codes (`SmartTask.Application/Common/Responses/ErrorCodes.cs`)
+
+```json
+{ "statusCode": 403, "success": false, "message": "You do not have permission to perform this action.",
+  "errorCode": "INSUFFICIENT_ROLE", "traceId": "0HN..." }
+```
+
+| Status | `errorCode` | Meaning | What the client does |
+|---|---|---|---|
+| 401 | `TOKEN_EXPIRED` | access token expired | call `POST auth/refresh` once, retry; sign out if the refresh fails |
+| 401 | `TOKEN_INVALID` | bad signature, issuer, audience or format | clear the session, go to `/login?returnUrl=…` |
+| 401 | `AUTH_REQUIRED` | no token sent | clear the session, go to `/login?returnUrl=…` |
+| 403 | `INSUFFICIENT_ROLE` | the role may not call this endpoint | show "not allowed" / route to `/forbidden`; don't retry; hide such UI by role |
+| 403 | `RESOURCE_FORBIDDEN` | role fine, but not for this project/task | show the message inline (toast); stay on the page |
+| 401/403 | `ACCOUNT_INACTIVE` | reserved for the active-user follow-up | sign out with an "account deactivated" notice |
+
+Codes are never renamed once shipped. Other statuses (400/404/409/5xx) carry no code yet.
 
 ---
 

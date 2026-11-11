@@ -1,0 +1,201 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using SmartTask.Application.Contracts.Identity;
+using SmartTask.Domain.Entities;
+using SmartTask.Domain.Enums;
+using SmartTask.Infrastructure.Identity;
+using SmartTask.Persistence;
+
+namespace SmartTask.Api.IntegrationTests;
+
+/// <summary>
+/// Role-based authorization and the 401/403 error codes, through the real pipeline. Users are seeded
+/// straight into the database with the role a test needs, and tokens are minted by the app's own
+/// <see cref="IJwtTokenService"/>. Hand-signed tokens cover the expired and unknown-role cases.
+/// </summary>
+[Collection(ApiCollection.Name)]
+public sealed class AuthorizationTests(SmartTaskApiFactory factory)
+{
+    [Fact]
+    public async Task Anonymous_ProtectedEndpoint_Returns401AuthRequired()
+    {
+        var response = await factory.CreateApiClient().GetAsync("/api/v1/dashboard");
+
+        var json = await response.ShouldBeEnvelopeAsync(401);
+        json.ErrorCode().ShouldBe("AUTH_REQUIRED");
+        response.Headers.WwwAuthenticate.ShouldContain(h => h.Scheme == "Bearer");
+    }
+
+    [Fact]
+    public async Task ExpiredToken_Returns401TokenExpired()
+    {
+        var user = await SeedUserAsync(UserRole.Admin);
+        var token = SignToken(user.Id, nameof(UserRole.Admin), expires: DateTime.UtcNow.AddMinutes(-10));
+
+        var json = await (await ClientWith(token).GetAsync("/api/v1/users/me")).ShouldBeEnvelopeAsync(401);
+
+        json.ErrorCode().ShouldBe("TOKEN_EXPIRED");
+    }
+
+    [Fact]
+    public async Task GarbageToken_Returns401TokenInvalid()
+    {
+        var json = await (await ClientWith("not.a.jwt").GetAsync("/api/v1/users/me")).ShouldBeEnvelopeAsync(401);
+
+        json.ErrorCode().ShouldBe("TOKEN_INVALID");
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/v1/users")]
+    [InlineData("GET", "/api/v1/users/lookup")]
+    [InlineData("POST", "/api/v1/projects")]
+    public async Task TeamMember_ManagementEndpoint_Returns403InsufficientRole(string method, string url)
+    {
+        var client = ClientWith(await TokenForAsync(UserRole.TeamMember));
+
+        var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url)
+        {
+            Content = method == "POST" ? JsonContent.Create(new { name = "Nope", startDate = "2026-01-01" }) : null,
+        });
+
+        var json = await response.ShouldBeEnvelopeAsync(403);
+        json.ErrorCode().ShouldBe("INSUFFICIENT_ROLE");
+        json.GetProperty("message").GetString().ShouldBe("You do not have permission to perform this action.");
+    }
+
+    [Fact]
+    public async Task ProjectManager_CanLookUpUsers_ButNotListThem()
+    {
+        var client = ClientWith(await TokenForAsync(UserRole.ProjectManager));
+
+        await (await client.GetAsync("/api/v1/users/lookup?search=a")).ShouldBeEnvelopeAsync(200);
+
+        var json = await (await client.GetAsync("/api/v1/users")).ShouldBeEnvelopeAsync(403);
+        json.ErrorCode().ShouldBe("INSUFFICIENT_ROLE");
+    }
+
+    [Fact]
+    public async Task Admin_CanListUsers()
+    {
+        var client = ClientWith(await TokenForAsync(UserRole.Admin));
+
+        await (await client.GetAsync("/api/v1/users")).ShouldBeEnvelopeAsync(200);
+    }
+
+    [Theory]
+    [InlineData("Hacker")]
+    [InlineData("1")]
+    [InlineData("admin")]
+    [InlineData(null)]
+    public async Task ValidSignature_UnknownOrMissingRole_Returns403(string? role)
+    {
+        var user = await SeedUserAsync(UserRole.Admin);
+        var token = SignToken(user.Id, role, expires: DateTime.UtcNow.AddMinutes(5));
+
+        var json = await (await ClientWith(token).GetAsync("/api/v1/users/me")).ShouldBeEnvelopeAsync(403);
+
+        json.ErrorCode().ShouldBe("INSUFFICIENT_ROLE");
+    }
+
+    [Fact]
+    public async Task TeamMember_ChangingStatusOfSomeoneElsesTask_Returns403ResourceForbidden()
+    {
+        // The role layer lets a TeamMember call the endpoint; the service refuses because they aren't the assignee.
+        var admin = ClientWith(await TokenForAsync(UserRole.Admin));
+        var assignee = await SeedUserAsync(UserRole.TeamMember);
+        var outsider = await SeedUserAsync(UserRole.TeamMember);
+
+        var project = await (await admin.PostJsonAsync("/api/v1/projects", new
+        {
+            name = $"Authz {Guid.NewGuid():N}",
+            startDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        })).ShouldBeEnvelopeAsync(201);
+        var projectId = project.GetProperty("data").GetProperty("id").GetGuid();
+
+        foreach (var member in new[] { assignee, outsider })
+        {
+            (await admin.PostJsonAsync($"/api/v1/projects/{projectId}/members", new { userId = member.Id }))
+                .StatusCode.ShouldBe(System.Net.HttpStatusCode.NoContent);
+        }
+
+        var task = await (await admin.PostJsonAsync($"/api/v1/projects/{projectId}/tasks", new
+        {
+            title = "Someone else's task",
+            priority = "Medium",
+            assigneeId = assignee.Id,
+        })).ShouldBeEnvelopeAsync(201);
+        var taskId = task.GetProperty("data").GetProperty("id").GetGuid();
+
+        var outsiderClient = ClientWith(factory.Services.GetRequiredService<IJwtTokenService>().CreateAccessToken(outsider).Token);
+        var response = await outsiderClient.PatchAsJsonAsync($"/api/v1/tasks/{taskId}/status", new { status = "InProgress" });
+
+        var json = await response.ShouldBeEnvelopeAsync(403);
+        json.ErrorCode().ShouldBe("RESOURCE_FORBIDDEN");
+    }
+
+    [Fact]
+    public async Task HealthLive_StaysAnonymous()
+    {
+        var response = await factory.CreateApiClient().GetAsync("/health/live");
+
+        ((int)response.StatusCode).ShouldBe(200);
+    }
+
+    private HttpClient ClientWith(string token)
+    {
+        var client = factory.CreateApiClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    private async Task<string> TokenForAsync(UserRole role)
+    {
+        var user = await SeedUserAsync(role);
+        return factory.Services.GetRequiredService<IJwtTokenService>().CreateAccessToken(user).Token;
+    }
+
+    private async Task<User> SeedUserAsync(UserRole role)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SmartTaskDbContext>();
+
+        var user = User.Create("Authz", role.ToString(), $"authz-{Guid.NewGuid():N}@example.com", "not-a-real-hash");
+        user.ChangeRole(role);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
+    }
+
+    /// <summary>Signs a token with the app's key, issuer and audience, but with any role (or none) and any expiry.</summary>
+    private string SignToken(Guid userId, string? role, DateTime expires)
+    {
+        var jwt = factory.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
+        var claims = new Dictionary<string, object> { [AppClaimTypes.Subject] = userId.ToString() };
+        if (role is not null)
+        {
+            claims[AppClaimTypes.Role] = role;
+        }
+
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = jwt.Issuer,
+            Audience = jwt.Audience,
+            IssuedAt = expires.AddMinutes(-20),
+            NotBefore = expires.AddMinutes(-20),
+            Expires = expires,
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(jwt.CreateSigningKey(), SecurityAlgorithms.HmacSha256),
+        });
+    }
+}
+
+internal static class ErrorCodeJsonExtensions
+{
+    public static string? ErrorCode(this JsonElement json) =>
+        json.TryGetProperty("errorCode", out var code) ? code.GetString() : null;
+}
