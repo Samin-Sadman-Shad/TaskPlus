@@ -13,6 +13,10 @@ It **never saves anything**: the client shows the suggestion and the user decide
 | Input validation | [`ImproveDescriptionRequestDtoValidator`](src/SmartTask.Application/Validators/Ai/ImproveDescriptionRequestDtoValidator.cs) |
 | Controller      | [`AiController`](src/SmartTask.Api/Controllers/AiController.cs) |
 
+Sections 1–5 cover the five topics the assignment asks for, and section 6 covers configuration.
+[Appendix A](#appendix-a--prompts-used-during-development) lists the prompts used to build the project
+with Claude Code.
+
 ---
 
 ## 1. AI Prompt Design
@@ -339,3 +343,161 @@ endpoint, because the validator rejects plain `http` on purpose. The provider mu
 **Resilience:** the OpenAI SDK pipeline retries 408/429/5xx twice with exponential backoff and honours
 `Retry-After`. Together with the overall timeout, a slow or failing provider costs the user at most
 `TimeoutSeconds`.
+
+---
+
+## Appendix A — Prompts used during development
+
+Sections 1–6 describe the prompt the **application** sends to the AI model. This appendix answers a
+different question: how the code itself was produced with an AI coding agent (Claude Code), and what
+was asked of it at each step.
+
+> **Source of each prompt.** The custom commands in A.2 are prompts stored in the repository; the files
+> are the exact text that was run. The requests in A.3 were typed into the session and were not saved
+> word for word. They are reconstructed from [docs/PROGRESS.md](docs/PROGRESS.md) and the commit history,
+> and written in one consistent form (goal, constraints, definition of done). Each one is followed by
+> what it produced.
+
+### A.1 Shared context for every prompt
+
+Every prompt ran with the same standing context, so individual prompts could stay short:
+
+| File | Role in prompting |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | Loaded automatically: architecture, dependency rule, role matrix, and the non-negotiable rules (spec first, no sensitive data in DTOs, no `IQueryable` outside Persistence, whitelisted sorting, no secrets in source, build and tests must pass). |
+| [docs/DOMAIN-MODEL.md](docs/DOMAIN-MODEL.md), [docs/API-CONVENTIONS.md](docs/API-CONVENTIONS.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | The specifications the prompts refer to instead of repeating them. "If code and spec disagree, stop and ask." |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | The agent's log: every step records what it created, its decisions and deviations, the build and test result, and open questions. |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | The human side of the loop: plan → run → verify → review → commit → log. |
+
+### A.2 Custom commands (run in this order)
+
+Each command is a reusable prompt in [.claude/commands/](.claude/commands). Each one names its inputs
+(specs), its output location (one layer), what it must not touch, and a self-check that must pass
+before it reports done.
+
+| # | Prompt (command) | Asked for | Commit |
+|---|---|---|---|
+| 1 | [`/create-domain`](.claude/commands/create-domain.md) | Entities, enums, constants and domain exceptions from DOMAIN-MODEL.md; no dependencies; no clock access in the domain | `92804ed` |
+| 2 | [`/create-repositories`](.claude/commands/create-repositories.md) | Repository and Unit of Work contracts in Application, EF Core implementations, configurations using the shared constants, soft-delete and audit interceptors | `c623b25` |
+| 3 | [`/create-dto`](.claude/commands/create-dto.md) | Create / Update / Read DTOs and explicit mapping extensions (no AutoMapper); sensitive and server-controlled fields excluded | `e6473c3` |
+| 4 | [`/implement-validators`](.claude/commands/implement-validators.md) | FluentValidation validators for every request DTO, sharing the domain length constants, with unit tests | `5ab26e1` |
+| 5 | [`/create-features`](.claude/commands/create-features.md) | One application service per feature, with resource-level permission checks, returning `BaseResponse` | `6aeb310`, fix `1b6be76` |
+| 6 | [`/implement-auth`](.claude/commands/implement-auth.md) | Register, login, refresh, logout; JWT access tokens; rotating, hashed refresh tokens in an HttpOnly cookie; reuse detection | `f555181` |
+| 7 | [`/create-api`](.claude/commands/create-api.md) | Thin controllers on `BaseApiController`; Swagger, Serilog, exception handler, CORS, rate limiting, health checks; first migration | `7cf5d9b` |
+| 8 | [`/implement-ai`](.claude/commands/implement-ai.md) | The AI endpoint behind a swappable provider (Strategy), the versioned prompt, output validation, and the first version of this file | `54ee45a` |
+| 9 | [`/implement-authorization`](.claude/commands/implement-authorization.md) | `[Authorize(Roles = …)]` on every endpoint, a global authorization result handler, machine-readable 401/403 error codes | `0591ee9` |
+| 10 | [`/deploy-backend-services`](.claude/commands/deploy-backend-services.md) | Two-stage API Dockerfile, SQL Server with persistent data, Docker Compose, HTTPS, migrations at start-up | `e9e2d80` |
+| 11 | [`/create-angular-feature`](.claude/commands/create-angular-feature.md) | Angular core (memory-only token storage, interceptors, guards, shell), then the auth, dashboard, projects, tasks and users features | `ee72c32` |
+| 12 | [`/write-docs`](.claude/commands/write-docs.md) | README, the final PROMPTS.md, the SQL script from the migrations, OpenAPI and Postman exports, all checked against the code | `ee72c32` |
+| — | [`/review-pending-tasks`](.claude/commands/review-pending-tasks.md) | Utility: re-run every command's self-check and finish anything left pending | — |
+
+The commands themselves were written before they were run (`0a5ba45`, `48a41d4`, `c84ef23`), and
+updated whenever a later decision changed their contract.
+
+### A.3 Prompts beyond the commands
+
+These requests changed the design across several layers, so they were given as direct prompts instead
+of a command.
+
+#### A.3.1 Move the solution to the repository root (`0ad38a7`)
+
+> Restructure the repository so that `SmartTask.slnx`, `Directory.Build.props`, `src/` and `tests/` sit
+> directly at the root; remove the nested template folder. Update every path in `CLAUDE.md`, the command
+> files and the solution file. One refactor commit with no behaviour change. Done when `dotnet build` and
+> `dotnet test` pass from the root.
+
+**Outcome:** the layout rule in CLAUDE.md §3; every command uses root-relative paths.
+
+#### A.3.2 First Admin bootstrap and admin-created users (`742b421`)
+
+> Self-registration only creates TeamMembers, so a new deployment has no Admin. Add a start-up bootstrap
+> that creates one Admin from `Bootstrap:Admin:*` configuration (environment variables or user-secrets,
+> never source). Constraints: create it only when no active Admin exists; never overwrite a password;
+> never promote an existing account that already uses the email, because anyone could pre-register it.
+> Add `POST users` (Admin only) to create accounts with any role. Put creation, hashing and role
+> assignment in one factory used by registration, the bootstrap, admin creation and the seed data.
+> Update the specification documents first, then the code, with unit and HTTP tests.
+
+**Outcome:** `UserAccountFactory`, `AdminBootstrapService`, `POST users`; verified in Docker that a
+restart does not create a second Admin.
+
+#### A.3.3 Change password and temporary passwords (`742b421`)
+
+> A password set by an Admin must be temporary. Add `User.MustChangePassword` with a migration that
+> leaves existing users unaffected. While it is set, the user can sign in, but every endpoint except
+> `GET users/me` and `POST users/me/password` returns 403 `PASSWORD_CHANGE_REQUIRED`. Enforce this in
+> one global place, driven by an explicit allow-list attribute, not in each controller. Changing a
+> password always needs the current one and signs out every other session. Cover the full first
+> sign-in flow with an integration test.
+
+**Outcome:** the `AddUserMustChangePassword` migration, the `pwd_change` claim,
+`[AllowedWhilePasswordChangeRequired]`, and the client's password-change guard.
+
+#### A.3.4 Local secrets and an end-to-end browser check (`ee72c32`)
+
+> Configure local user-secrets (a random JWT signing key and a bootstrap Admin) without writing anything
+> secret to the repository. Then exercise the portal in a real browser (Playwright, desktop viewport)
+> against the live API, across all three roles: sign-in and return URL, forced password change,
+> project and task CRUD, member lookup, AI accept/discard, status transitions, filters kept in the URL,
+> session restore on reload, and role-based hiding. Fix client defects you find; record backend issues
+> as findings instead of changing policy. Save screenshots to `docs/images/` for the README.
+
+**Outcome:** 33/33 scenarios passed; layout fixes in the task filters and the users table; the shared
+`auth` rate limit on refresh recorded as a known limitation; the README screenshots.
+
+#### A.3.5 Containerise the web client: the whole stack with one `docker compose up` (`2e67407`)
+
+> Add the Angular client to Docker Compose so a reviewer can start SQL Server, the API and the web app
+> with a single command. Build with Node and serve with an unprivileged nginx image. nginx serves the SPA
+> with a fallback route and proxies `/api/` to the API over HTTPS inside the Docker network, so the
+> browser sees one origin and the `SameSite=Strict` refresh cookie works without CORS. Add security
+> headers, including a Content-Security-Policy without inline scripts. Because every request now comes
+> from the proxy, make the API trust `X-Forwarded-For` only from the web container's fixed IP;
+> otherwise all users share one rate-limit bucket. Verify in a browser through the container.
+
+**Outcome:** the client Dockerfile, the nginx configuration and `ForwardedHeadersExtensions`. The check
+also found and fixed a 500 on login caused by reading `IPAddress.ScopeId` on an IPv4 address.
+
+#### A.3.6 Zero-input start script (`442453d`)
+
+> Write one start script per platform (`scripts/start.ps1` for Windows PowerShell 5.1, `scripts/start.sh`
+> for bash) that takes a fresh clone to a running stack without asking anything. If `.env` is missing,
+> generate it with cryptographically random values: database passwords, JWT key, certificate password
+> and a first Admin whose password is printed once. The values must satisfy both the SQL Server and the
+> application password policies and be safe in `.env`, Compose and `sqlcmd`. Create the data folders and
+> the HTTPS certificate (with `dotnet dev-certs`, or OpenSSL in a container when the SDK is missing),
+> run `docker compose up -d --build`, and wait for the health endpoints. The script must be safe to
+> re-run: never modify an existing `.env`, and skip anything that already exists. Commit no secrets and
+> no defaults that act as secrets.
+
+**Outcome:** both scripts, tested in isolated copies. A database user hard-coded in
+`appsettings.Docker.json` was found and replaced with values from Compose.
+
+#### A.3.7 Documentation follow-ups
+
+> Add guidance to the README for running without Docker against a SQL Server instance managed in SSMS:
+> creating the database, applying the generated script or the migrations, a least-privilege application
+> login, the connection string through user-secrets with the password kept separate, and
+> troubleshooting. Check every table, column and setting name against the code.
+
+> Check PROMPTS.md against the assignment's five required sections, and add an appendix listing the
+> prompts used during development.
+
+**Outcome:** the README section "Use SQL Server and SSMS (without Docker)" and this appendix.
+
+### A.4 How the prompts were written
+
+The same rules apply to every prompt above:
+
+- **Point to the specification instead of restating it.** Prompts refer to `docs/` and CLAUDE.md, so a
+  rule exists in one place and every step applies it the same way.
+- **Name the scope and what not to touch.** One layer or one concern per prompt, for example "don't
+  create controllers while running `/create-dto`".
+- **State the security constraints together with the threat behind them** (a pre-registered admin email,
+  a spoofed `X-Forwarded-For`), so the agent doesn't trade them away for convenience.
+- **Define done so it can be checked:** build and tests pass, a grep that must print nothing, a scenario
+  verified over HTTP or in a browser.
+- **Ask for decisions to be recorded.** Deviations, trade-offs and open questions go to PROGRESS.md, so
+  a reviewer can see why the code looks the way it does.
+- **On ambiguity, stop and ask.** Where the spec was unclear, the developer decided (for example, no
+  `Project` navigation on `TaskItem`); the agent didn't guess.
