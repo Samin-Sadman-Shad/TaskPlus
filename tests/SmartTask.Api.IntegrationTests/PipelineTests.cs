@@ -114,6 +114,26 @@ public sealed class PipelineTests(SmartTaskApiFactory factory)
         response.Headers.Contains("Content-Security-Policy").ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task Swagger_PadlockOnlyOnProtectedEndpoints_RolesListed_GenericSchemaIdsReadable()
+    {
+        var json = await _client.GetStringAsync("/swagger/v1/swagger.json");
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+
+        paths.GetProperty("/api/v1/auth/login").GetProperty("post").TryGetProperty("security", out _).ShouldBeFalse();
+
+        var listUsers = paths.GetProperty("/api/v1/users").GetProperty("get");
+        listUsers.GetProperty("security")[0].TryGetProperty("Bearer", out _).ShouldBeTrue();
+        listUsers.GetProperty("description").GetString().ShouldEndWith("**Roles:** Admin");
+
+        paths.GetProperty("/api/v1/projects").GetProperty("post").GetProperty("description").GetString()
+            .ShouldEndWith("**Roles:** Admin, ProjectManager");
+
+        document.RootElement.GetProperty("components").GetProperty("schemas")
+            .TryGetProperty("BaseResponse<UserDto>", out _).ShouldBeTrue();
+    }
+
     private async Task<HttpResponseMessage> Preflight(string origin)
     {
         using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/auth/refresh");

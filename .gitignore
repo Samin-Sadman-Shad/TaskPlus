@@ -57,3 +57,6 @@ TestResult.xml
 nunit-*.xml
 
 .vs/
+
+# Certificates (dev HTTPS for the API container)
+*.pfx

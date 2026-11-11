@@ -1,0 +1,104 @@
+# SmartTask backend: SQL Server + one-shot database bootstrap + API.
+# Values come from .env (git-ignored; copy .env.example). Start: docker compose up -d --build
+
+name: ${COMPOSE_PROJECT_NAME:-smarttask}
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: smarttask-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD}   # lets the health check log in without -P on the command line
+    ports:
+      - "${SQL_PORT:-1433}:1433"             # SSMS / Azure Data Studio: localhost,1433 as the app login
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q \"SELECT 1\" -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks: [smarttask-network]
+
+  # Creates the database and the application login (idempotent), then exits.
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: smarttask-sqlserver-init
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD}
+      APP_DB_NAME: ${APP_DB_NAME:-SmartTaskDb}
+      APP_DB_USER: ${APP_DB_USER:?set APP_DB_USER in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+    volumes:
+      - ./docker/sqlserver:/scripts:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -C -b -i /scripts/init.sql
+        -v APP_DB_NAME="$$APP_DB_NAME" APP_DB_USER="$$APP_DB_USER" APP_DB_PASSWORD="$$APP_DB_PASSWORD"
+    restart: "no"
+    networks: [smarttask-network]
+
+  api:
+    build:
+      context: .
+      dockerfile: src/SmartTask.Api/Dockerfile
+    image: smarttask-api
+    container_name: smarttask-api
+    depends_on:
+      sqlserver-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker          # loads appsettings.Docker.json (connection string without password, Swagger on, migrations on)
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ASPNETCORE_HTTPS_PORTS: "8081"
+      ASPNETCORE_HTTPS_PORT: "${API_HTTPS_PORT:-7180}"   # host port: the HTTP→HTTPS redirect must point where the browser can reach
+      ASPNETCORE_Kestrel__Certificates__Default__Path: /https/smarttask-api.pfx
+      ASPNETCORE_Kestrel__Certificates__Default__Password: ${CERT_PASSWORD:?set CERT_PASSWORD in .env}
+      Database__Password: ${APP_DB_PASSWORD}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
+      Ai__ApiKey: ${AI_API_KEY:-}
+    ports:
+      - "${API_HTTP_PORT:-5180}:8080"
+      - "${API_HTTPS_PORT:-7180}:8081"
+    volumes:
+      - ${CERT_DIR:?set CERT_DIR in .env}:/https:ro
+      - ./logs/api:/app/logs
+    restart: unless-stopped
+    networks: [smarttask-network]
+
+  # Angular client: uncomment once client/smart-task-web has a Dockerfile.
+  # Its API base URL is https://localhost:${API_HTTPS_PORT}/api/v1 (the browser calls the API directly;
+  # the refresh cookie is Secure, so use HTTPS). CORS already allows http(s)://localhost:4200.
+  # smart-task-web:
+  #   build:
+  #     context: ./client/smart-task-web
+  #   image: smarttask-web
+  #   container_name: smarttask-web
+  #   depends_on: [api]
+  #   ports:
+  #     - "4200:80"
+  #   restart: unless-stopped
+  #   networks: [smarttask-network]
+
+networks:
+  smarttask-network:
+    name: smarttask-network
+
+volumes:
+  # Bind volume: the data files live on the host under D:\Projects\TaskPlus, outside the repo.
+  sqlserver-data:
+    name: smarttask-sqlserver-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SQLSERVER_DATA_DIR:?set SQLSERVER_DATA_DIR in .env}

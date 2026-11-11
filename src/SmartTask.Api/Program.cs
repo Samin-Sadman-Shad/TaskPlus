@@ -26,6 +26,7 @@ try
     var app = builder.Build();
 
     app.UseApiPipeline();
+    await app.ApplyDatabaseMigrationsAsync();
     await app.SeedDevelopmentDataAsync();
 
     await app.RunAsync();

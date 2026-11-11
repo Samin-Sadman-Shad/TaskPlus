@@ -54,6 +54,8 @@ public sealed class SmartTaskApiFactory : WebApplicationFactory<Program>, IAsync
         // Placeholder only: AddPersistence requires a connection string, but the provider is replaced below.
         builder.UseSetting("ConnectionStrings:DefaultConnection", "Server=unused;Database=unused");
         builder.UseSetting("Jwt:SigningKey", TestSigningKey);
+        // The migrations are SQL Server-specific and the tests use SQLite; never migrate, even when CI runs in a container.
+        builder.UseSetting("Database:ApplyMigrationsOnStartup", "false");
         builder.UseSetting("Swagger:Enabled", "true");
         builder.UseSetting("RateLimiting:Auth:PermitLimit", "1000");
         builder.UseSetting("RateLimiting:Global:PermitLimit", "1000");
