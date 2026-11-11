@@ -25,5 +25,11 @@ public sealed record UserDto
 
     public DateTimeOffset? LastLoginAt { get; init; }
 
+    /// <summary>
+    /// True when an admin set the current password: the client must send the user to the change-password
+    /// screen, and every other endpoint answers 403 <c>PASSWORD_CHANGE_REQUIRED</c> until it is changed.
+    /// </summary>
+    public bool MustChangePassword { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 }

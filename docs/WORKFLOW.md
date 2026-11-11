@@ -75,3 +75,37 @@ by whichever command needs them first, always from `docs/API-CONVENTIONS.md`, so
 3. Add a migration.
 
 Commands are written to be **idempotent**: they update existing files rather than duplicating them.
+
+## Run with Docker
+
+Prerequisite: **Docker Desktop** (WSL 2 backend) running. `docker ps` must print a table, not an error.
+
+1. **Settings.** Copy `.env.example` to `.env` and fill in every `<generated>` value with a long random
+   string (`.env` is git-ignored; never commit it). `SQLSERVER_DATA_DIR` is where the database files go.
+2. **Certificate** for HTTPS in the container (once per machine; use the `CERT_PASSWORD` from `.env`):
+   ```bash
+   dotnet dev-certs https -ep "$USERPROFILE/.aspnet/https/smarttask-api.pfx" -p "<CERT_PASSWORD>"
+   dotnet dev-certs https --trust
+   ```
+3. **Data folders** (once): create `data` and `log` inside `SQLSERVER_DATA_DIR`.
+4. **Start:** `docker compose up -d --build`. SQL Server starts; `sqlserver-init` creates the database and the
+   app login; the API applies the EF Core migrations (`MigrateAsync`) and starts.
+5. **First admin:** set `BOOTSTRAP_ADMIN_FIRST_NAME`, `_LAST_NAME`, `_EMAIL` and `_PASSWORD` in `.env`.
+   On start-up the API creates that Admin only if no active admin exists; it never overwrites the
+   password or promotes an existing account. Sign in with it, then create other users with any role
+   through `POST /api/v1/users` (or promote self-registered users with `PATCH /api/v1/users/{id}/role`).
+6. **Check:** `docker compose ps` (sqlserver healthy, sqlserver-init `Exited (0)`, api `Up`) and
+   `docker compose logs api` (PowerShell: `| Select-String migration`).
+
+| What | URL |
+|------|-----|
+| Swagger UI | https://localhost:7180/swagger |
+| API base | https://localhost:7180/api/v1 (http://localhost:5180 redirects to HTTPS) |
+| Health | https://localhost:7180/health/live, https://localhost:7180/health/ready |
+| SQL Server (SSMS) | `localhost,1433`, SQL login from `APP_DB_USER` / `APP_DB_PASSWORD` |
+
+- `docker compose down` stops everything and **keeps** the data; `docker compose up -d` brings it back.
+- To start from an empty database: `docker compose down`, then delete the `data` and `log` folders' contents.
+- `docker compose down -v` also deletes the Docker-managed `sqlserver-secrets` volume; avoid it unless you are
+  also wiping the data folders.
+

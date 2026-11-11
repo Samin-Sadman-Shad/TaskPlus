@@ -35,6 +35,12 @@ public sealed class User : AuditableEntity
 
     public DateTimeOffset? LastLoginAt { get; private set; }
 
+    /// <summary>
+    /// The user must choose a new password before doing anything else, because someone else (an admin)
+    /// set the current one. Cleared by <see cref="ChangePasswordHash"/>.
+    /// </summary>
+    public bool MustChangePassword { get; private set; }
+
     public IReadOnlyCollection<RefreshToken> RefreshTokens => _refreshTokens.AsReadOnly();
 
     public string FullName => $"{FirstName} {LastName}";
@@ -61,13 +67,21 @@ public sealed class User : AuditableEntity
 
     /// <summary>
     /// Replaces the password hash and revokes every active refresh token, so existing sessions
-    /// must sign in again with the new password.
+    /// must sign in again with the new password. A password the user set themselves also clears
+    /// <see cref="MustChangePassword"/>.
     /// </summary>
     public void ChangePasswordHash(string newHash, DateTimeOffset now)
     {
         SetPasswordHash(newHash);
+        MustChangePassword = false;
         RevokeAllRefreshTokens(now, PasswordChangedReason);
     }
+
+    /// <summary>
+    /// Marks the current password as temporary (set by an admin): the user must change it at the next
+    /// sign-in. Call after setting the password.
+    /// </summary>
+    public void RequirePasswordChange() => MustChangePassword = true;
 
     /// <summary>
     /// Replaces the stored hash with a stronger hash of the <b>same</b> password (for example after the

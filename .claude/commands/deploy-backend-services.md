@@ -33,8 +33,10 @@ client (`client/smart-task-web`). When this command is done, the client can call
    `Seed/DevelopmentDataSeeder.cs`
 6. `Directory.Build.props`: `TreatWarningsAsErrors` is on, so the container build fails on any warning
 
-Prerequisites: `/create-api` and `/implement-auth` are done; `docker` and `docker compose` are on the PATH.
-If Docker isn't running, **stop and ask the user to start Docker Desktop**.
+Prerequisites: `/create-api` and `/implement-auth` are done. **Docker Desktop** (WSL 2 backend) is
+installed and running. Check with `docker ps`; an error mentioning `dockerDesktopLinuxEngine` means
+the engine isn't up. If it's missing or stopped, **stop and ask the user** to install it from
+docker.com or start it, and wait for "Engine running".
 
 ## 1. Fixed values (from the user)
 
@@ -228,7 +230,13 @@ JWT_SIGNING_KEY=<generated: 64+ random chars>
 CERT_PASSWORD=<generated>
 CERT_DIR=C:/Users/<you>/.aspnet/https
 AI_API_KEY=
+BOOTSTRAP_ADMIN_FIRST_NAME=<first name>
+BOOTSTRAP_ADMIN_LAST_NAME=<last name>
+BOOTSTRAP_ADMIN_EMAIL=<admin email>
+BOOTSTRAP_ADMIN_PASSWORD=<strong password>
 ```
+The bootstrap admin is personal data plus a password, so it lives in `.env` only. Ask the user for the
+values when `.env` doesn't have them yet; leaving the email empty skips the bootstrap.
 Generate the secrets. Never print them in the report; say only that they were generated. Check
 `git check-ignore .env` before writing it.
 
@@ -238,14 +246,24 @@ One network, `smarttask-network`. The services:
 1. **`sqlserver`**: `mcr.microsoft.com/mssql/server:2022-latest`
    - env: `ACCEPT_EULA=Y`, `MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}`, `MSSQL_PID=Developer`
    - ports: `"${SQL_PORT}:1433"` (so SSMS can connect at `localhost,1433` as `Samin`)
-   - volume: `sqlserver-data` → `/var/opt/mssql`
-   - healthcheck: `/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1"`,
-     interval 10s, retries 10, start_period 30s
+   - volumes: `sqlserver-data` → `/var/opt/mssql/data`, `sqlserver-log` → `/var/opt/mssql/log`,
+     `sqlserver-secrets` (Docker-managed) → `/var/opt/mssql/secrets`. **Never mount the whole
+     `/var/opt/mssql` from a Windows folder**: SQL Server can't create its machine key there and
+     crash-loops with `Failed to load LSA: 0xc0070102`.
+   - env `SQLCMDPASSWORD=${MSSQL_SA_PASSWORD}`, so no `-P` appears on a command line
+   - healthcheck: healthy only when **every** database is `ONLINE`:
+     `sqlcmd -S localhost -U sa -C -b -Q "IF EXISTS (SELECT 1 FROM sys.databases WHERE state_desc <> 'ONLINE') THROW 50000, 'recovering', 1;"`,
+     interval 10s, retries 10, start_period 30s. A plain `SELECT 1` passes while `SmartTaskDb` is still
+     recovering after a restart, and the init step then fails with `Msg 904 … cannot be autostarted`.
    - `restart: unless-stopped`
 2. **`sqlserver-init`**: the same image, one-shot
    - `depends_on: sqlserver: condition: service_healthy`
    - mounts `./docker/sqlserver:/scripts:ro`
-   - runs `/opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -i /scripts/init.sql -v APP_DB_NAME=… APP_DB_USER=… APP_DB_PASSWORD=…`
+   - runs `sqlcmd -S sqlserver -U sa -C -b -i /scripts/init.sql -v APP_DB_NAME=… APP_DB_USER=… APP_DB_PASSWORD=…`
+     (password from `SQLCMDPASSWORD`) in a `bash -c` loop of up to 10 attempts, 3 s apart
+   - why it exists: a new container only has `sa`. `MigrateAsync()` has to connect as the app login
+     to run at all, so it can't create that login. The script creates the login and the empty database;
+     **the schema always comes from the EF Core migrations**
    - `restart: "no"`
 3. **`api`**: `build: { context: ., dockerfile: src/SmartTask.Api/Dockerfile }`, image `smarttask-api`
    - `depends_on: sqlserver-init: condition: service_completed_successfully`
@@ -258,6 +276,8 @@ One network, `smarttask-network`. The services:
      - `ASPNETCORE_Kestrel__Certificates__Default__Path=/https/smarttask-api.pfx`,
        `ASPNETCORE_Kestrel__Certificates__Default__Password=${CERT_PASSWORD}`
      - `Database__Password=${APP_DB_PASSWORD}`, `Jwt__SigningKey=${JWT_SIGNING_KEY}`, `Ai__ApiKey=${AI_API_KEY}`
+     - `Bootstrap__Admin__FirstName/LastName/Email/Password` from the `BOOTSTRAP_ADMIN_*` values: on start-up
+       the API creates that Admin **only when no active admin exists** (see `/create-features`)
    - volumes: `${CERT_DIR}:/https:ro`, `./logs/api:/app/logs`
    - `restart: unless-stopped`
 4. **Client slot**: a commented-out `smart-task-web` service, so the client only needs uncommenting
@@ -265,17 +285,21 @@ One network, `smarttask-network`. The services:
    note: its API base URL is `https://localhost:${API_HTTPS_PORT}/api/v1`). CORS already allows
    `localhost:4200`.
 
-Top-level volume, a bind to the folder under `D:\Projects\TaskPlus`:
+Top-level volumes. Data and log are binds to folders under `D:\Projects\TaskPlus`; secrets is Docker-managed:
 ```yaml
 volumes:
   sqlserver-data:
     driver: local
-    driver_opts: { type: none, o: bind, device: ${SQLSERVER_DATA_DIR} }
+    driver_opts: { type: none, o: bind, device: ${SQLSERVER_DATA_DIR}/data }
+  sqlserver-log:
+    driver: local
+    driver_opts: { type: none, o: bind, device: ${SQLSERVER_DATA_DIR}/log }
+  sqlserver-secrets: {}
 ```
-Create the folder first (`mkdir -p`). If Docker Desktop rejects the Windows path for a bind volume,
-fall back to the short bind syntax `${SQLSERVER_DATA_DIR}:/var/opt/mssql` on the service and report
-it. If SQL Server then fails to start on the host folder (permissions or file-system errors in
-`docker compose logs sqlserver`), **stop and ask** before switching to a Docker-managed volume.
+Create `data/` and `log/` first (`mkdir -p`). If SQL Server fails to start
+(`docker compose logs sqlserver`), look for the first `ERROR` line before the crash dump, not the
+`find: … Permission denied` noise. **Stop and ask** before moving the data files off the host folder.
+If `docker volume rm` is needed after changing `driver_opts`, run `docker compose down` first.
 
 ## 5. Verify
 
@@ -287,6 +311,7 @@ docker compose config --quiet                       # compose file is valid
 docker compose up -d --build
 docker compose ps                                   # sqlserver healthy, sqlserver-init exited 0, api running
 docker compose logs api | grep -iE "migration|schema is up to date"   # first run: "Applying 1 pending migration(s)"; later runs: "up to date"
+#   PowerShell has no grep: docker compose logs api | Select-String -Pattern migration
 curl -s  http://localhost:5180/health/live          # Healthy (or a 307 to https)
 curl -sk https://localhost:7180/health/ready        # Healthy, database check included
 curl -sk -o /dev/null -w "%{http_code}" https://localhost:7180/swagger/index.html   # 200
@@ -294,8 +319,15 @@ grep -rnE "Password=|SigningKey\"\s*:\s*\"[^\"]+|MSSQL_SA_PASSWORD=[^<]" --inclu
 git status --porcelain | grep -E "\.env$|\.pfx$"    # nothing
 ```
 Then do the persistence round trip: register a user through `https://localhost:7180/api/v1/auth/register`,
-run `docker compose down` and `docker compose up -d`, and log in with the same user. Then check that
+run `docker compose down` and `docker compose up -d` **twice** (the second start is the one that
+exercises recovery of an existing `SmartTaskDb`), and log in with the same user. From Git Bash, set
+`MSYS_NO_PATHCONV=1` before `docker compose exec … /opt/...`, or the path is rewritten to a Windows one. Then check that
 `D:\Projects\TaskPlus\sqlserver-data` contains `data/SmartTaskDb.mdf`.
+
+Then the first-admin flow: `docker compose logs api` shows `Bootstrap admin <id> created` on the first
+start and `Admin bootstrap skipped: an active admin already exists` after a restart. Log in with the
+`BOOTSTRAP_ADMIN_*` credentials (role `Admin`), create a ProjectManager with `POST /api/v1/users`, and log
+in as that user (role `ProjectManager`).
 
 In Swagger UI, check: the Auth endpoints have no padlock; after **Authorize** with a TeamMember token,
 `GET /users` returns 403 with `INSUFFICIENT_ROLE`; schema names show as `BaseResponse<UserDto>`.
@@ -310,6 +342,7 @@ Self-check, report ✅/❌:
 - [ ] Swagger UI loads over HTTPS, JWT Authorize works, anonymous endpoints have no padlock, generic schemas are named `Type<Arg>`
 - [ ] No secret in any tracked file; `.env` and `*.pfx` ignored; `.env.example` has placeholders only
 - [ ] `SmartTaskDbContext` has no connection configuration; Persistence still doesn't reference the Api
+- [ ] Exactly one bootstrap admin after any number of restarts; it can sign in and create users with `POST /users`
 - [ ] Commented client service and CORS origins ready for the Angular app
 - [ ] Build passes, tests pass (report the count)
 

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SmartTask.Application.Common.Models;
 using SmartTask.Application.Contracts.Persistence;
 using SmartTask.Domain.Entities;
+using SmartTask.Domain.Enums;
 using SmartTask.Persistence.Extensions;
 using SortFields = SmartTask.Application.Common.Models.UserQueryParameters.SortFields;
 
@@ -31,6 +32,10 @@ internal sealed class UserRepository(SmartTaskDbContext context, TimeProvider ti
         var normalized = Normalize(email);
         return Set.AnyAsync(u => u.NormalizedEmail == normalized, cancellationToken);
     }
+
+    /// <inheritdoc />
+    public Task<bool> ActiveUserWithRoleExistsAsync(UserRole role, CancellationToken cancellationToken = default) =>
+        Set.AnyAsync(u => u.Role == role && u.IsActive, cancellationToken);
 
     /// <inheritdoc />
     public Task<User?> GetWithActiveRefreshTokensAsync(Guid userId, CancellationToken cancellationToken = default)

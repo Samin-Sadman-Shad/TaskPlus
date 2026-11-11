@@ -120,6 +120,12 @@ one Admin, one ProjectManager and one TeamMember with passwords from user-secret
 projects. It runs only when `Seed:Enabled` is true **and** the environment is Development. Don't
 auto-migrate in production.
 
+**First admin in every environment:** `Extensions/AdminBootstrapExtensions.BootstrapAdminAsync()` runs
+after the seeder in `Program.cs`. It reads `Bootstrap:Admin:{FirstName,LastName,Email,Password}`
+(environment variables / user-secrets only, never `appsettings*.json`), does nothing when `Email` or
+`Password` is empty, and otherwise calls `IAdminBootstrapService.EnsureAdminAsync`. The rules live in
+the service (see `/create-features`).
+
 ## 4. Tests
 
 Add `tests/SmartTask.Api.IntegrationTests` (xUnit + `Microsoft.AspNetCore.Mvc.Testing`) with a

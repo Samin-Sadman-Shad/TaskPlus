@@ -9,11 +9,13 @@ using SmartTask.Infrastructure.Identity;
 namespace SmartTask.Api.Authorization;
 
 /// <summary>
-/// The single place where a failed role check becomes an HTTP response. A forbidden result
+/// The single place where an authorization result becomes an HTTP response. A forbidden result
 /// (authenticated, wrong or unknown role) gets a 403 <see cref="BaseResponse"/> with
-/// <see cref="ErrorCodes.InsufficientRole"/>. Everything else (success, and the challenge for an
-/// unauthenticated caller) goes to the framework's default handler, so challenges still reach
-/// <c>JwtBearerEvents.OnChallenge</c>.
+/// <see cref="ErrorCodes.InsufficientRole"/>. A <b>successful</b> result for a user whose token says the
+/// password is temporary gets 403 <see cref="ErrorCodes.PasswordChangeRequired"/>, unless the endpoint is
+/// marked <see cref="AllowedWhilePasswordChangeRequiredAttribute"/>. Everything else (success, and the
+/// challenge for an unauthenticated caller) goes to the framework's default handler, so challenges still
+/// reach <c>JwtBearerEvents.OnChallenge</c>.
 /// </summary>
 /// <remarks>
 /// This is the framework's global hook for authorization results, so no custom middleware is needed.
@@ -27,6 +29,22 @@ public sealed class ApiAuthorizationResultHandler(ILogger<ApiAuthorizationResult
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(authorizeResult);
+
+        if (authorizeResult.Succeeded && MustChangePasswordFirst(context))
+        {
+            logger.LogWarning(
+                "Blocked {Method} {Path} for user {UserId}: password change required (trace {TraceId})",
+                context.Request.Method,
+                context.Request.Path,
+                context.User.FindFirstValue(AppClaimTypes.Subject),
+                context.TraceIdentifier);
+
+            await ApiResponseWriter.WriteAsync(
+                context,
+                BaseResponse.Forbidden(ResponseMessages.PasswordChangeRequired, ErrorCodes.PasswordChangeRequired),
+                context.RequestAborted);
+            return;
+        }
 
         if (!authorizeResult.Forbidden)
         {
@@ -58,4 +76,8 @@ public sealed class ApiAuthorizationResultHandler(ILogger<ApiAuthorizationResult
             BaseResponse.Forbidden(ResponseMessages.InsufficientRole, ErrorCodes.InsufficientRole),
             context.RequestAborted);
     }
+
+    private static bool MustChangePasswordFirst(HttpContext context) =>
+        context.User.FindFirstValue(AppClaimTypes.PasswordChangeRequired) == AppClaimTypes.PasswordChangeRequiredValue
+        && context.GetEndpoint()?.Metadata.GetMetadata<AllowedWhilePasswordChangeRequiredAttribute>() is null;
 }

@@ -63,8 +63,9 @@ Required sections (from the assignment), in this order:
    string → `dotnet ef database update` (or run `database/SmartTask.sql`) → run the API → `npm ci && npm start` →
    log in with the seeded accounts. Include a troubleshooting section (dev certificate trust, CORS
    origin, SQL connectivity)
-5. **Configuration** — table of every setting (`Jwt`, `Ai`, `Cors`, `RateLimiting`, `Serilog`, `Seed`),
-   which ones are secrets, and where to set them
+5. **Configuration** — table of every setting (`Jwt`, `Ai`, `Cors`, `RateLimiting`, `Serilog`, `Seed`,
+   `Database`, `Bootstrap:Admin`), which ones are secrets, and where to set them. Explain the first-admin
+   flow: the bootstrap admin from configuration, then `POST users` / `PATCH users/{id}/role` for everyone else
 6. **API Overview** — the endpoint table (verb, route, roles, description) **generated from the
    controllers**, the response envelope with a success example and an error example, the auth flow
    (access token + rotating refresh cookie) as a Mermaid sequence diagram, and paging/sorting/filter

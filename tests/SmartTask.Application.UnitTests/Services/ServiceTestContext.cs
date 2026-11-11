@@ -38,6 +38,8 @@ internal sealed class ServiceTestContext
 
     public IUnitOfWork UnitOfWork { get; } = Substitute.For<IUnitOfWork>();
 
+    public IPasswordHasher PasswordHasher { get; } = Substitute.For<IPasswordHasher>();
+
     public FakeTimeProvider Time { get; } = TestData.Clock();
 
     public ProjectAccessGuard Access => new(CurrentUser, Projects);
@@ -81,7 +83,7 @@ internal sealed class ServiceTestContext
     public Task SaveCalled(int times) => UnitOfWork.Received(times).SaveChangesAsync(Arg.Any<CancellationToken>());
 
     public UserService UserService() =>
-        new(Users, UnitOfWork, Access, CurrentUser, Time, NullLogger<UserService>.Instance);
+        new(Users, UnitOfWork, Access, CurrentUser, PasswordHasher, Time, NullLogger<UserService>.Instance);
 
     public ProjectService ProjectService() =>
         new(Projects, Tasks, Users, UnitOfWork, Access, CurrentUser, Time, NullLogger<ProjectService>.Instance);

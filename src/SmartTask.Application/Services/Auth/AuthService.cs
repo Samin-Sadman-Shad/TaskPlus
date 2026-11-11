@@ -7,7 +7,10 @@ using SmartTask.Application.Contracts.Persistence;
 using SmartTask.Application.Contracts.Services;
 using SmartTask.Application.DTOs.Auth;
 using SmartTask.Application.DTOs.Users;
+using SmartTask.Application.Services.Users;
+using SmartTask.Application.Validators.Common;
 using SmartTask.Domain.Entities;
+using SmartTask.Domain.Enums;
 
 namespace SmartTask.Application.Services.Auth;
 
@@ -36,10 +39,7 @@ public sealed class AuthService(
     private const string ReuseDetectedReason = "Reuse detected";
     private const string LogoutReason = "Logout";
 
-    /// <summary>
-    /// <see cref="User.Create"/> needs a hash, and hashing needs the user instance. This placeholder is
-    /// replaced in the same operation, before anything is saved.
-    /// </summary>
+    /// <summary>Hash placeholder for the timing dummy below; it is never stored.</summary>
     private const string PendingPasswordHash = "pending";
 
     /// <summary>Used only to spend the same hashing time for an unknown email as for a known one.</summary>
@@ -59,9 +59,9 @@ public sealed class AuthService(
                     return BaseResponse<UserDto>.Conflict(ResponseMessages.EmailTaken);
                 }
 
-                // User.Create always produces a TeamMember: the request has no role to choose.
-                var user = User.Create(request.FirstName, request.LastName, request.Email, PendingPasswordHash);
-                user.ChangePasswordHash(passwordHasher.Hash(user, request.Password), time.GetUtcNow());
+                // Self-registration is always a TeamMember: the request has no role to choose.
+                var user = UserAccountFactory.Create(
+                    request.FirstName, request.LastName, request.Email, request.Password, UserRole.TeamMember, passwordHasher, time.GetUtcNow());
                 await users.AddAsync(user, cancellationToken);
 
                 try
@@ -178,6 +178,55 @@ public sealed class AuthService(
             },
             (status, message) => BaseResponse.Fail(status, message),
             logger);
+
+    public Task<BaseResponse<AuthResponseDto>> ChangePasswordAsync(ChangePasswordDto request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return BusinessErrorHandling.RunAsync(
+            async () =>
+            {
+                if (currentUser.UserId is not { } userId)
+                {
+                    return BaseResponse<AuthResponseDto>.Unauthorized(ResponseMessages.AuthenticationRequired);
+                }
+
+                var user = await users.GetWithActiveRefreshTokensAsync(userId, cancellationToken);
+                if (user is not { IsActive: true })
+                {
+                    return SessionExpired();
+                }
+
+                var check = passwordHasher.Verify(user, user.PasswordHash, request.CurrentPassword);
+                if (check is not (PasswordCheckResult.Success or PasswordCheckResult.SuccessRehashNeeded))
+                {
+                    logger.LogWarning("Password change rejected for user {UserId}: wrong current password", userId);
+                    return FieldError(nameof(ChangePasswordDto.CurrentPassword), ResponseMessages.CurrentPasswordIncorrect);
+                }
+
+                if (RuleBuilderExtensions.ContainsEmailLocalPart(request.NewPassword, user.Email))
+                {
+                    return FieldError(nameof(ChangePasswordDto.NewPassword), ResponseMessages.PasswordContainsEmail);
+                }
+
+                // Revokes every refresh token (all devices) and clears MustChangePassword; this device
+                // then gets a fresh session below, saved in the same SaveChanges.
+                user.ChangePasswordHash(passwordHasher.Hash(user, request.NewPassword), time.GetUtcNow());
+                var response = await IssueTokensAsync(user, refreshTokenService.Generate(), cancellationToken);
+
+                logger.LogInformation("User {UserId} changed their password; other sessions were signed out", userId);
+                return BaseResponse<AuthResponseDto>.Ok(response);
+            },
+            (status, message) => BaseResponse<AuthResponseDto>.Fail(status, message),
+            logger);
+    }
+
+    /// <summary>A 400 with one field error, in the same shape as the validation filter (camelCase key).</summary>
+    private static BaseResponse<AuthResponseDto> FieldError(string property, string message) =>
+        BaseResponse<AuthResponseDto>.ValidationFailed(new Dictionary<string, string[]>
+        {
+            [System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(property)] = [message],
+        });
 
     /// <summary>
     /// Stores the hash of <paramref name="refresh"/> on the user, saves (one save for the whole

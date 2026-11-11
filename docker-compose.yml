@@ -15,9 +15,16 @@ services:
     ports:
       - "${SQL_PORT:-1433}:1433"             # SSMS / Azure Data Studio: localhost,1433 as the app login
     volumes:
-      - sqlserver-data:/var/opt/mssql
+      # Only the database and log files live on the Windows host. SQL Server's machine key (secrets/)
+      # can't be created on a Windows bind mount ("Failed to load LSA: 0xc0070102"), so it stays in a
+      # Docker-managed volume. Data still survives "docker compose down".
+      - sqlserver-data:/var/opt/mssql/data
+      - sqlserver-log:/var/opt/mssql/log
+      - sqlserver-secrets:/var/opt/mssql/secrets
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q \"SELECT 1\" -b -o /dev/null"]
+      # Healthy only when every database (including SmartTaskDb after a restart) has finished recovery;
+      # a plain SELECT 1 passes too early and the init step then fails with Msg 904.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -o /dev/null -Q \"IF EXISTS (SELECT 1 FROM sys.databases WHERE state_desc <> 'ONLINE') THROW 50000, 'databases still recovering', 1;\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -41,9 +48,13 @@ services:
       - ./docker/sqlserver:/scripts:ro
     entrypoint: ["/bin/bash", "-c"]
     command:
+      # Retries cover the short window in which SQL Server is up but still starting a database.
       - >-
+        for attempt in 1 2 3 4 5 6 7 8 9 10; do
         /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -C -b -i /scripts/init.sql
-        -v APP_DB_NAME="$$APP_DB_NAME" APP_DB_USER="$$APP_DB_USER" APP_DB_PASSWORD="$$APP_DB_PASSWORD"
+        -v APP_DB_NAME="$$APP_DB_NAME" APP_DB_USER="$$APP_DB_USER" APP_DB_PASSWORD="$$APP_DB_PASSWORD" && exit 0;
+        echo "init attempt $$attempt failed; retrying in 3s"; sleep 3;
+        done; exit 1
     restart: "no"
     networks: [smarttask-network]
 
@@ -66,6 +77,11 @@ services:
       Database__Password: ${APP_DB_PASSWORD}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
       Ai__ApiKey: ${AI_API_KEY:-}
+      # First admin: created on start-up only when no active admin exists (never overwritten or promoted).
+      Bootstrap__Admin__FirstName: ${BOOTSTRAP_ADMIN_FIRST_NAME:-}
+      Bootstrap__Admin__LastName: ${BOOTSTRAP_ADMIN_LAST_NAME:-}
+      Bootstrap__Admin__Email: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      Bootstrap__Admin__Password: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     ports:
       - "${API_HTTP_PORT:-5180}:8080"
       - "${API_HTTPS_PORT:-7180}:8081"
@@ -94,11 +110,23 @@ networks:
     name: smarttask-network
 
 volumes:
-  # Bind volume: the data files live on the host under D:\Projects\TaskPlus, outside the repo.
+  # Bind volumes: the .mdf/.ldf files and the SQL Server error log live on the host under
+  # D:\Projects\TaskPlus\sqlserver-data (outside the repo). Create data/ and log/ before the first up.
   sqlserver-data:
     name: smarttask-sqlserver-data
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${SQLSERVER_DATA_DIR:?set SQLSERVER_DATA_DIR in .env}
+      device: ${SQLSERVER_DATA_DIR:?set SQLSERVER_DATA_DIR in .env}/data
+  sqlserver-log:
+    name: smarttask-sqlserver-log
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SQLSERVER_DATA_DIR}/log
+  # Docker-managed: SQL Server's machine key. Removing it (docker compose down -v) makes the
+  # encrypted master keys unreadable; the databases themselves are not encrypted.
+  sqlserver-secrets:
+    name: smarttask-sqlserver-secrets

@@ -54,6 +54,7 @@ public sealed class AuthorizationTests(SmartTaskApiFactory factory)
     [InlineData("GET", "/api/v1/users")]
     [InlineData("GET", "/api/v1/users/lookup")]
     [InlineData("POST", "/api/v1/projects")]
+    [InlineData("POST", "/api/v1/users")]
     public async Task TeamMember_ManagementEndpoint_Returns403InsufficientRole(string method, string url)
     {
         var client = ClientWith(await TokenForAsync(UserRole.TeamMember));
@@ -78,6 +79,129 @@ public sealed class AuthorizationTests(SmartTaskApiFactory factory)
         var json = await (await client.GetAsync("/api/v1/users")).ShouldBeEnvelopeAsync(403);
         json.ErrorCode().ShouldBe("INSUFFICIENT_ROLE");
     }
+
+    [Fact]
+    public async Task ProjectManager_CannotCreateUsers()
+    {
+        var client = ClientWith(await TokenForAsync(UserRole.ProjectManager));
+
+        var json = await (await client.PostAsJsonAsync("/api/v1/users", NewUserBody($"pm-made-{Guid.NewGuid():N}@example.com", "Admin")))
+            .ShouldBeEnvelopeAsync(403);
+        json.ErrorCode().ShouldBe("INSUFFICIENT_ROLE");
+    }
+
+    [Fact]
+    public async Task Admin_CreatesProjectManager_WhoCanSignInWithThatRole()
+    {
+        var admin = ClientWith(await TokenForAsync(UserRole.Admin));
+        var email = $"new-pm-{Guid.NewGuid():N}@example.com";
+
+        var created = await (await admin.PostAsJsonAsync("/api/v1/users", NewUserBody(email, "ProjectManager"))).ShouldBeEnvelopeAsync(201);
+        created.GetProperty("data").GetProperty("role").GetString().ShouldBe("ProjectManager");
+
+        var login = await (await factory.CreateApiClient().PostAsJsonAsync("/api/v1/auth/login", new { email, password = NewUserPassword }))
+            .ShouldBeEnvelopeAsync(200);
+        login.GetProperty("data").GetProperty("user").GetProperty("role").GetString().ShouldBe("ProjectManager");
+
+        // The same email again is a conflict, not a second account.
+        await (await admin.PostAsJsonAsync("/api/v1/users", NewUserBody(email, "TeamMember"))).ShouldBeEnvelopeAsync(409);
+    }
+
+    [Fact]
+    public async Task Admin_CreateUserWithoutRole_Returns400()
+    {
+        var admin = ClientWith(await TokenForAsync(UserRole.Admin));
+
+        await (await admin.PostAsJsonAsync("/api/v1/users", new
+        {
+            firstName = "No",
+            lastName = "Role",
+            email = $"no-role-{Guid.NewGuid():N}@example.com",
+            password = NewUserPassword,
+            confirmPassword = NewUserPassword,
+        })).ShouldBeEnvelopeAsync(400);
+    }
+
+    [Fact]
+    public async Task AdminCreatedUser_MustChangePasswordBeforeAnythingElse()
+    {
+        var admin = ClientWith(await TokenForAsync(UserRole.Admin));
+        var email = $"temp-pass-{Guid.NewGuid():N}@example.com";
+        await (await admin.PostAsJsonAsync("/api/v1/users", NewUserBody(email, "TeamMember"))).ShouldBeEnvelopeAsync(201);
+
+        // First sign-in with the admin-set password: allowed, but flagged.
+        var login = await (await factory.CreateApiClient().PostAsJsonAsync("/api/v1/auth/login", new { email, password = NewUserPassword }))
+            .ShouldBeEnvelopeAsync(200);
+        login.GetProperty("data").GetProperty("user").GetProperty("mustChangePassword").GetBoolean().ShouldBeTrue();
+        var temporary = ClientWith(login.GetProperty("data").GetProperty("accessToken").GetString()!);
+
+        // Everything except the profile and the password change is blocked.
+        var blocked = await (await temporary.GetAsync("/api/v1/projects")).ShouldBeEnvelopeAsync(403);
+        blocked.ErrorCode().ShouldBe("PASSWORD_CHANGE_REQUIRED");
+        await (await temporary.GetAsync("/api/v1/users/me")).ShouldBeEnvelopeAsync(200);
+
+        // The current password is still required.
+        await (await temporary.PostAsJsonAsync("/api/v1/users/me/password", new
+        {
+            currentPassword = "Wrong#Pass2026",
+            newPassword = "Chosen#Pass2026",
+            confirmNewPassword = "Chosen#Pass2026",
+        })).ShouldBeEnvelopeAsync(400);
+
+        var changed = await (await temporary.PostAsJsonAsync("/api/v1/users/me/password", new
+        {
+            currentPassword = NewUserPassword,
+            newPassword = "Chosen#Pass2026",
+            confirmNewPassword = "Chosen#Pass2026",
+        })).ShouldBeEnvelopeAsync(200);
+        changed.GetProperty("data").GetProperty("user").GetProperty("mustChangePassword").GetBoolean().ShouldBeFalse();
+
+        // The new token works everywhere; the old one stays restricted until it expires.
+        var unlocked = ClientWith(changed.GetProperty("data").GetProperty("accessToken").GetString()!);
+        await (await unlocked.GetAsync("/api/v1/projects")).ShouldBeEnvelopeAsync(200);
+        await (await temporary.GetAsync("/api/v1/projects")).ShouldBeEnvelopeAsync(403);
+
+        // The old password no longer signs in; the new one does, without the flag.
+        await (await factory.CreateApiClient().PostAsJsonAsync("/api/v1/auth/login", new { email, password = NewUserPassword }))
+            .ShouldBeEnvelopeAsync(401);
+        var again = await (await factory.CreateApiClient().PostAsJsonAsync("/api/v1/auth/login", new { email, password = "Chosen#Pass2026" }))
+            .ShouldBeEnvelopeAsync(200);
+        again.GetProperty("data").GetProperty("user").GetProperty("mustChangePassword").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SelfRegisteredUser_CanChangePassword_AndIsNeverBlocked()
+    {
+        var client = factory.CreateApiClient();
+        var email = $"self-{Guid.NewGuid():N}@example.com";
+        await (await client.PostAsJsonAsync("/api/v1/auth/register", new
+        {
+            firstName = "Self", lastName = "Registered", email, password = NewUserPassword, confirmPassword = NewUserPassword,
+        })).ShouldBeEnvelopeAsync(201);
+        var login = await (await client.PostAsJsonAsync("/api/v1/auth/login", new { email, password = NewUserPassword })).ShouldBeEnvelopeAsync(200);
+        login.GetProperty("data").GetProperty("user").GetProperty("mustChangePassword").GetBoolean().ShouldBeFalse();
+        var user = ClientWith(login.GetProperty("data").GetProperty("accessToken").GetString()!);
+
+        await (await user.GetAsync("/api/v1/projects")).ShouldBeEnvelopeAsync(200);
+        await (await user.PostAsJsonAsync("/api/v1/users/me/password", new
+        {
+            currentPassword = NewUserPassword,
+            newPassword = "Rotated#Pass2026",
+            confirmNewPassword = "Rotated#Pass2026",
+        })).ShouldBeEnvelopeAsync(200);
+    }
+
+    private const string NewUserPassword = "Create#Pass2026";
+
+    private static object NewUserBody(string email, string role) => new
+    {
+        firstName = "Made",
+        lastName = "ByAdmin",
+        email,
+        password = NewUserPassword,
+        confirmPassword = NewUserPassword,
+        role,
+    };
 
     [Fact]
     public async Task Admin_CanListUsers()

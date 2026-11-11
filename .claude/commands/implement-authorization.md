@@ -128,7 +128,9 @@ Then remove the named role policies:
 |---|---|---|---|---|---|
 | **AuthController** | `[AllowAnonymous]` | Register, Login, Refresh, Logout | `auth/*` | — | — |
 | **UsersController** | `Roles = AppRoles.Any` | GetCurrent / UpdateCurrentProfile | `GET/PUT users/me` | — | — |
+| | | ChangePassword | `POST users/me/password` | — (`[EnableRateLimiting(auth)]`) | current password required |
 | | | GetPaged | `GET users` | `Roles = AppRoles.Admin` | — |
+| | | Create | `POST users` | `Roles = AppRoles.Admin` | email unique (409) |
 | | | Lookup | `GET users/lookup` | `Roles = AppRoles.Management` | — |
 | | | GetById | `GET users/{id}` | `Roles = AppRoles.Admin` | — |
 | | | ChangeRole | `PATCH users/{id}/role` | `Roles = AppRoles.Admin` | no self-demotion |
@@ -278,6 +280,7 @@ public static class ErrorCodes
     public const string TokenExpired           = "TOKEN_EXPIRED";      // 401: the client should call /auth/refresh
     public const string TokenInvalid           = "TOKEN_INVALID";      // 401: bad signature, issuer or format → sign in again
     public const string InsufficientRole       = "INSUFFICIENT_ROLE";  // 403: the role may not call this endpoint
+    public const string PasswordChangeRequired = "PASSWORD_CHANGE_REQUIRED"; // 403: admin-set password must be changed first
     public const string ResourceForbidden      = "RESOURCE_FORBIDDEN"; // 403: the role is fine, but not for this project or task
     public const string AccountInactive        = "ACCOUNT_INACTIVE";   // 401/403: reserved for the active-user follow-up
 }
@@ -357,6 +360,7 @@ error interceptor.
 | 401 | `TOKEN_EXPIRED` | Call `POST auth/refresh` once, then retry the original request. If the refresh fails, sign out |
 | 401 | `TOKEN_INVALID`, `AUTH_REQUIRED` | Clear the session and go to `/login` with a `returnUrl` |
 | 403 | `INSUFFICIENT_ROLE` | Show "not allowed" (or route to `/forbidden`). Don't retry. Hide the matching UI by role |
+| 403 | `PASSWORD_CHANGE_REQUIRED` | Route to the change-password page. `ApiAuthorizationResultHandler` returns it on a **successful** role check when the token has `pwd_change=required` and the endpoint lacks `[AllowedWhilePasswordChangeRequired]` (only `GetCurrent` and `ChangePassword` have it; a metadata test pins that list) |
 | 403 | `RESOURCE_FORBIDDEN` | Show the message inline (e.g. a toast). Stay on the page |
 | 403/401 | `ACCOUNT_INACTIVE` | Reserved: sign out with an "account deactivated" notice |
 

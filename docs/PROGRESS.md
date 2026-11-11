@@ -13,6 +13,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 7    | `/create-api`           | Done        | all (AiController pending /implement-ai) | Build ✅; Tests ✅ (382, +29 API integration); InitialCreate migration applied to LocalDB; /swagger and /health/ready ✅ |
 | 8    | `/implement-ai`         | Done        | all   | Build ✅; Tests ✅ (457 = 55 Domain + 309 Application + 58 Infrastructure + 35 API); smoke run on LocalDB with the fake provider ✅; secret grep clean |
 | 9    | `/implement-authorization` | Done     | all   | Build ✅ (0 warnings); Tests ✅ (489 = 55 Domain + 314 Application + 58 Infrastructure + 62 API) |
+| 10   | `/deploy-backend-services` | Done     | all   | Build ✅ (0 warnings); Tests ✅ (496 = 55 Domain + 314 Application + 58 Infrastructure + 69 API); `docker compose up` ✅ (sqlserver healthy, init exit 0, api up); InitialCreate applied by `MigrateAsync` in the container; data survives down/up ✅ |
 
 ## Log
 
@@ -23,6 +24,70 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — Change password and temporary passwords for admin-created users
+- Spec: `CLAUDE.md` §4 (change own password, temporary-password rule), `DOMAIN-MODEL.md` (`User.MustChangePassword`,
+  `RequirePasswordChange()`, `ChangePasswordDto`), `API-CONVENTIONS.md` (`POST users/me/password`, 403 `PASSWORD_CHANGE_REQUIRED`).
+- Domain: `MustChangePassword` (cleared by `ChangePasswordHash`, kept by `RehashPassword`). Migration
+  `AddUserMustChangePassword` (`bit NOT NULL DEFAULT 0`; existing users unaffected), applied by `MigrateAsync` in Docker.
+- Application: `ChangePasswordDto` + validator; `IAuthService.ChangePasswordAsync` (current password required, email
+  rule, all other sessions revoked, fresh session for this device, one save); `UserService.CreateAsync` marks the
+  password temporary; `UserDto.MustChangePassword`; `ErrorCodes.PasswordChangeRequired`.
+- Infrastructure: the JWT carries `pwd_change=required` only while the flag is set.
+- Api: `POST users/me/password` (any role, `auth` rate limit); `[AllowedWhilePasswordChangeRequired]` on `GetCurrent` and
+  `ChangePassword`; `ApiAuthorizationResultHandler` returns 403 `PASSWORD_CHANGE_REQUIRED` everywhere else.
+- Tests: +3 Domain, +15 Application (service and validator), +2 Infrastructure (claim), +4 API (full first sign-in flow,
+  self-registered user never blocked, allow-list pinned, metadata).
+- Verified in Docker: migration applied on start; admin-created user signs in with `mustChangePassword: true`, gets 403
+  `PASSWORD_CHANGE_REQUIRED` on `/projects`, changes the password, and the new token works.
+- Build: ✅ (0 warnings) / Tests: ✅ (553 = 58 Domain + 357 Application + 60 Infrastructure + 78 API)
+- Follow-ups: the bootstrap admin's configured password is not marked temporary (it was chosen by the operator);
+  an admin "reset password" endpoint would reuse `RequirePasswordChange()`.
+
+### 2026-11-11 — First admin bootstrap and admin-created users
+- Spec: `CLAUDE.md` §4 (admins create users with any role; first-admin bootstrap rules), `DOMAIN-MODEL.md`
+  (`CreateUserDto`, `UserAccountFactory`), `API-CONVENTIONS.md` §7 (`POST users`, Admin, 201/409).
+- Created: `DTOs/Users/CreateUserDto.cs`, `Validators/Users/CreateUserDtoValidator.cs`, `Services/Users/UserAccountFactory.cs`
+  (one create → hash → role path for registration, admin-created users, the bootstrap admin and the dev seed),
+  `Contracts/Services/IAdminBootstrapService.cs` + `Services/Users/AdminBootstrapService.cs`,
+  `Api/Extensions/AdminBootstrapExtensions.cs` (`Bootstrap:Admin` settings → service, after the dev seed),
+  `UsersController.Create` (`POST users`, Admin). Tests: `UserServiceCreateTests` (8), `AdminBootstrapServiceTests` (5),
+  `CreateUserDtoValidatorTests` (14), 4 API tests (403 for TM/PM, Admin creates a PM who signs in, missing role → 400, duplicate → 409).
+- Updated: `IUserRepository.ActiveUserWithRoleExistsAsync`; `RuleBuilderExtensions.NotContainEmailLocalPart` (moved out of the
+  register validator, now shared); `AuthService.RegisterAsync` and `DevelopmentDataSeeder` use the factory; compose/.env
+  (`BOOTSTRAP_ADMIN_*`, values in the git-ignored `.env` only); command files `create-dto`, `implement-validators`,
+  `create-features`, `create-api`, `implement-authorization`, `write-docs`, `deploy-backend-services`.
+- Verified in Docker: bootstrap admin created on first start, skipped after a restart (still exactly one admin); it signs
+  in as Admin, creates a ProjectManager through `POST /users`, who signs in as ProjectManager and can create a project;
+  the PM gets 403 `INSUFFICIENT_ROLE` on `POST /users`.
+- Build: ✅ (0 warnings) / Tests: ✅ (529 = 55 Domain + 342 Application + 58 Infrastructure + 74 API)
+- Decisions: the bootstrap never promotes an existing account with the configured email and never overwrites a password;
+  only **active** admins count, so a deployment whose admins were all deactivated can recover with a new email.
+- Follow-ups: no change-password endpoint exists yet, so the bootstrap/initial passwords can't be rotated through the API.
+
+### 2026-11-11 — /deploy-backend-services
+- Created: `src/SmartTask.Api/Dockerfile` (two stages: sdk:10.0 restore+publish → aspnet:10.0, non-root, `/app/logs` owned by the app user),
+  `.dockerignore`, `docker-compose.yml` (sqlserver, one-shot sqlserver-init, api, commented `smart-task-web` slot, network `smarttask-network`),
+  `.env.example` (placeholders; `.env` is generated locally and git-ignored), `docker/sqlserver/init.sql` (idempotent: database, `Samin` login with
+  `CHECK_POLICY = OFF`, `db_owner`), `src/SmartTask.Api/appsettings.Docker.json` (connection string without password, Swagger on, migrations on),
+  `Api/Extensions/DatabaseMigrationExtensions.cs` (`MigrateAsync` at start-up when `Database:ApplyMigrationsOnStartup` is true, or unset and
+  `DOTNET_RUNNING_IN_CONTAINER=true`), `Api/Swagger/AuthorizeOperationFilter.cs`, `DatabaseMigrationExtensionsTests` (6), one Swagger pipeline test.
+- Updated: `Persistence/DependencyInjection.cs` (`Database:Password` applied with `SqlConnectionStringBuilder`; retry count/delay from
+  `Database:MaxRetryCount` / `Database:MaxRetryDelaySeconds`), `Program.cs` (one line), `SwaggerExtensions.cs` (`CustomSchemaIds` →
+  `BaseResponse<UserDto>`; padlock and roles per operation instead of a global requirement), `SmartTaskApiFactory` (migrations off for SQLite),
+  `.gitignore` (`*.pfx`). `SmartTaskDbContext`: no change needed (no `OnConfiguring`, no connection string).
+- Ports: API 5180 (HTTP, redirects) / 7180 (HTTPS), SQL Server 1433, all from launchSettings / defaults, all free.
+- Data: `D:\Projects\TaskPlus\sqlserver-data\data` and `\log` (bind volumes); SQL Server's `secrets/` is a Docker-managed volume.
+- Problems found while verifying and fixed:
+  - Mounting all of `/var/opt/mssql` from a Windows folder crash-loops SQL Server (`Failed to load LSA: 0xc0070102`) → split into data/log/secrets.
+  - On the second start the health check (`SELECT 1`) passed while `SmartTaskDb` was still recovering, so init failed with Msg 904 →
+    health check now requires every database `ONLINE`, init retries up to 10 times.
+- Build: ✅ (0 warnings) / Tests: ✅ (496 passed)
+- Open questions / follow-ups:
+  - `Samin` / `Samin` is for local development only (policy check off). Use a strong secret for anything shared.
+  - The dev HTTPS certificate is not trusted yet: run `dotnet dev-certs https --trust` once.
+  - Schema ids contain `<`, `>` and `,`, outside the OpenAPI component-name pattern: `/write-docs` must check the Postman import.
+  - Option still open: let `MigrateAsync` create the database too (init.sql only creates the login) or connect as `sa` and drop init.sql.
 
 ### 2026-11-11 — /implement-authorization
 - Created: `Api/Authorization/AppRoles.cs` (role names from `UserRole` via `nameof`; `Management`, `Any`, `All`),

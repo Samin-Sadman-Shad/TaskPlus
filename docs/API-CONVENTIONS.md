@@ -174,6 +174,7 @@ Every non-controller error path also returns the `BaseResponse` shape:
 | Model binding / malformed JSON      | `ApiBehaviorOptions.InvalidModelStateResponseFactory` → 400    |
 | Unauthenticated                     | `JwtBearerEvents.OnChallenge` → 401 `AUTH_REQUIRED` / `TOKEN_EXPIRED` / `TOKEN_INVALID` |
 | Authenticated but wrong/unknown role | `ApiAuthorizationResultHandler` (`IAuthorizationMiddlewareResultHandler`) → 403 `INSUFFICIENT_ROLE` |
+| Token has `pwd_change=required` (admin-set password) and the endpoint isn't `[AllowedWhilePasswordChangeRequired]` | same handler, after a successful role check → 403 `PASSWORD_CHANGE_REQUIRED`. Allowed: `GET users/me`, `POST users/me/password`, anonymous endpoints |
 | `ForbiddenAccessException` / `UnauthenticatedException` | `GlobalExceptionHandler` → 403 (its code) / 401 `AUTH_REQUIRED`, logged at Warning |
 | Rate limited                        | `RateLimiterOptions.OnRejected` → 429 + `Retry-After`          |
 | Unhandled exception                 | `GlobalExceptionHandler : IExceptionHandler` → 500 (logged with trace id, generic message) |
@@ -226,6 +227,7 @@ Two layers, kept separate:
 | 401 | `AUTH_REQUIRED` | no token sent | clear the session, go to `/login?returnUrl=…` |
 | 403 | `INSUFFICIENT_ROLE` | the role may not call this endpoint | show "not allowed" / route to `/forbidden`; don't retry; hide such UI by role |
 | 403 | `RESOURCE_FORBIDDEN` | role fine, but not for this project/task | show the message inline (toast); stay on the page |
+| 403 | `PASSWORD_CHANGE_REQUIRED` | an admin set the password; it must be changed first | route to the change-password page (also when login returns `user.mustChangePassword: true`); replace the stored access token with the one the change returns |
 | 401/403 | `ACCOUNT_INACTIVE` | reserved for the active-user follow-up | sign out with an "account deactivated" notice |
 
 Codes are never renamed once shipped. Other statuses (400/404/409/5xx) carry no code yet.
@@ -261,7 +263,9 @@ Base path `api/v1`. Roles: **A** = Admin, **PM** = ProjectManager, **TM** = Team
 |--------|----------------------------|------------------------|---------|-------|
 | GET    | `users/me`                 | —                      | 200 `UserDto` | any |
 | PUT    | `users/me`                 | `UpdateUserProfileDto` | 200 `UserDto` | any |
+| POST   | `users/me/password`        | `ChangePasswordDto`    | 200 `AuthResponseDto` + new refresh cookie; other sessions signed out (400 wrong current password) | any; rate limit `auth`; allowed while a password change is required |
 | GET    | `users`                    | query `UserQueryParameters` | 200 `PagedResult<UserDto>` | A |
+| POST   | `users`                    | `CreateUserDto`        | 201 `UserDto` (409 if the email is taken) | A |
 | GET    | `users/lookup?search=`     | —                      | 200 `IReadOnlyList<UserSummaryDto>` (max 20) | A, PM |
 | GET    | `users/{id}`               | —                      | 200 `UserDto` | A |
 | PATCH  | `users/{id}/role`          | `ChangeUserRoleDto`    | 200 `UserDto` | A |

@@ -74,6 +74,7 @@ Details: `docs/ARCHITECTURE.md`. Entity spec: `docs/DOMAIN-MODEL.md`. Coding rul
 | Action                                   | Admin | ProjectManager            | TeamMember                 |
 |------------------------------------------|:-----:|---------------------------|----------------------------|
 | Manage users / change roles              | ✅    | ❌                         | ❌                          |
+| Create a user with any role and password | ✅    | ❌                         | ❌                          |
 | Create project                           | ✅    | ✅                         | ❌                          |
 | Update / delete project                  | ✅    | ✅ own projects            | ❌                          |
 | View / list / search projects            | ✅ all| ✅ own + member of         | ✅ member of only           |
@@ -81,8 +82,21 @@ Details: `docs/ARCHITECTURE.md`. Entity spec: `docs/DOMAIN-MODEL.md`. Coding rul
 | Update task status                       | ✅    | ✅ in own projects         | ✅ tasks assigned to them   |
 | Dashboard                                | ✅ global | ✅ scoped to own projects | ✅ scoped to own tasks    |
 | AI improve description                   | ✅    | ✅                         | ✅                          |
+| Change own password                      | ✅    | ✅                         | ✅                          |
 
-Self-registration always creates a **TeamMember**. Roles are only changed by an Admin.
+Self-registration always creates a **TeamMember**. Roles are only changed by an Admin, and only an
+Admin can create an account with another role (`POST users`).
+
+**First admin (bootstrap).** On start-up the API ensures one Admin exists, from the `Bootstrap:Admin`
+settings (`FirstName`, `LastName`, `Email`, `Password`; environment variables or user-secrets, never
+source). It creates that Admin only when **no Admin exists yet**, never overwrites a password, and never
+promotes an existing account that already uses the email (that would let anyone pre-register the admin
+email). With no settings it does nothing.
+
+**Temporary passwords.** A password set by an Admin (`POST users`) is temporary: the user can sign in,
+but every endpoint except `GET users/me` and `POST users/me/password` answers 403
+`PASSWORD_CHANGE_REQUIRED` until they choose their own. Changing a password always needs the current
+one and signs out every other session.
 
 ## 5. Agentic workflow — custom commands
 

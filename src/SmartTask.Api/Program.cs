@@ -27,7 +27,8 @@ try
 
     app.UseApiPipeline();
     await app.ApplyDatabaseMigrationsAsync();
-    await app.SeedDevelopmentDataAsync();
+    await app.SeedDevelopmentDataAsync();   // Development sample data (only into an empty database)
+    await app.BootstrapAdminAsync();        // the deployment's first admin, if configured and none exists
 
     await app.RunAsync();
 }

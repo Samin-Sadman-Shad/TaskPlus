@@ -56,6 +56,7 @@ public interface IUserService
     Task<BaseResponse<PagedResult<UserDto>>>          GetPagedAsync(UserQueryParameters parameters, CancellationToken ct = default);
     Task<BaseResponse<IReadOnlyList<UserSummaryDto>>> LookupAsync(string? search, CancellationToken ct = default);
     Task<BaseResponse<UserDto>>                       GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<BaseResponse<UserDto>>                       CreateAsync(CreateUserDto dto, CancellationToken ct = default);   // admin: 201, 403, 409
     Task<BaseResponse<UserDto>>                       ChangeRoleAsync(Guid id, ChangeUserRoleDto dto, CancellationToken ct = default);
     Task<BaseResponse>                                ActivateAsync(Guid id, CancellationToken ct = default);
     Task<BaseResponse>                                DeactivateAsync(Guid id, CancellationToken ct = default);
@@ -151,11 +152,24 @@ It's implemented with `ICurrentUserService` and `IProjectRepository`. Rules come
   at `Warning`. No personal data beyond ids.
 - Keep each method short. If one grows past ~30 lines, extract a private helper.
 
+### New accounts and the first admin
+- Every new account with a password goes through `Services/Users/UserAccountFactory.Create(first, last,
+  email, password, role, hasher, now)`: registration, `UserService.CreateAsync`, the bootstrap admin
+  and the development seed. Don't repeat the create → hash → role sequence anywhere else.
+- `IAdminBootstrapService.EnsureAdminAsync(CreateUserDto)` → `AdminBootstrapOutcome`:
+  validate with `IValidator<CreateUserDto>` (invalid settings throw `InvalidOperationException`, naming
+  the setting but never the value); if an **active** admin exists (`IUserRepository.ActiveUserWithRoleExistsAsync`)
+  → `AdminAlreadyExists`; if the email belongs to an existing account → `EmailBelongsToExistingAccount`
+  (**never promote it**: anyone can self-register that address first); otherwise create the Admin and
+  save once → `Created`. A unique-index conflict from a parallel instance counts as `AdminAlreadyExists`.
+  Log ids only.
+
 ### Registration
 Add to `AddApplication()`:
 ```csharp
 services.AddScoped<IProjectAccessGuard, ProjectAccessGuard>();
 services.AddScoped<IUserService, UserService>();
+services.AddScoped<IAdminBootstrapService, AdminBootstrapService>();
 services.AddScoped<IProjectService, ProjectService>();
 services.AddScoped<ITaskService, TaskService>();
 services.AddScoped<IDashboardService, DashboardService>();

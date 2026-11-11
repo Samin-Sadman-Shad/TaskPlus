@@ -13,4 +13,12 @@ public static class AppClaimTypes
     public const string Name = JwtRegisteredClaimNames.Name;
     public const string Role = "role";
     public const string TokenId = JwtRegisteredClaimNames.Jti;
+
+    /// <summary>
+    /// Present (value <see cref="PasswordChangeRequiredValue"/>) only while the user must replace an
+    /// admin-set password. The API then allows just the endpoints marked <c>[AllowedWhilePasswordChangeRequired]</c>.
+    /// </summary>
+    public const string PasswordChangeRequired = "pwd_change";
+
+    public const string PasswordChangeRequiredValue = "required";
 }

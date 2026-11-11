@@ -77,18 +77,21 @@ Location: `src/SmartTask.Application/DTOs/<Feature>/`
 ### Users/
 | DTO                 | Fields |
 |---------------------|--------|
-| `UserDto` (read)    | Id, FirstName, LastName, FullName, Email, Role, IsActive, LastLoginAt, CreatedAt |
+| `UserDto` (read)    | Id, FirstName, LastName, FullName, Email, Role, IsActive, LastLoginAt, MustChangePassword, CreatedAt |
 | `UserSummaryDto`    | Id, FullName, Email, Role — used inside other DTOs and lookups |
 | `UpdateUserProfileDto` | FirstName, LastName |
 | `ChangeUserRoleDto` | Role (Admin-only endpoint) |
+| `CreateUserDto` | FirstName, LastName, Email, Password, ConfirmPassword, Role (Admin-only `POST users`; `Role` has no default, so a missing role fails validation). Redact both passwords in `ToString()` |
 
-(No `CreateUserDto` — users are created through `RegisterRequestDto`.)
+Self-registration uses `RegisterRequestDto` and never carries a role. `CreateUserDto` is the **only**
+request DTO allowed to carry `Role`, because only an Admin can send it.
 
 ### Auth/
 | DTO                      | Fields |
 |--------------------------|--------|
 | `RegisterRequestDto`     | FirstName, LastName, Email, Password, ConfirmPassword |
 | `LoginRequestDto`        | Email, Password |
+| `ChangePasswordDto`      | CurrentPassword, NewPassword, ConfirmNewPassword — redact all three in `ToString()` |
 | `AuthResponseDto`        | AccessToken, AccessTokenExpiresAt, User (`UserDto`) |
 
 Refresh and logout have **no request body**. The refresh token travels only in an HttpOnly cookie
@@ -171,7 +174,7 @@ grep -rnE "PasswordHash|TokenHash|NormalizedEmail|RowVersion|IsDeleted|DeletedBy
 Self-check, report ✅/❌:
 - [ ] Every entity in scope has Create, Update and Read DTOs (or a documented reason it doesn't)
 - [ ] No sensitive / server-controlled field in any DTO (grep above is empty)
-- [ ] No `Id` / `OwnerId` / `ProjectId` / `Status` / `Role` in Create or Update request bodies
+- [ ] No `Id` / `OwnerId` / `ProjectId` / `Status` / `Role` in Create or Update request bodies (exception: `Role` in the admin-only `CreateUserDto`)
 - [ ] Status and assignment have dedicated action DTOs
 - [ ] Mapping is domain → read only, explicit, no clock calls
 - [ ] DTOs carrying a password redact it in `ToString()`; no DTO carries a refresh token

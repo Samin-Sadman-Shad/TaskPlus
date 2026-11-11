@@ -86,6 +86,11 @@ public interface IAuthService
     Task<BaseResponse<AuthResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
     Task<BaseResponse<AuthResponseDto>> RefreshAsync(CancellationToken cancellationToken = default);
     Task<BaseResponse>                  LogoutAsync(CancellationToken cancellationToken = default);
+    // POST users/me/password (UsersController): verify the current password (400 on currentPassword),
+    // reject a new password containing the email local part (400 on newPassword), then
+    // user.ChangePasswordHash (revokes every refresh token, clears MustChangePassword) and issue a fresh
+    // session for this device in the same SaveChanges → 200 AuthResponseDto + new cookie.
+    Task<BaseResponse<AuthResponseDto>> ChangePasswordAsync(ChangePasswordDto request, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -210,7 +215,8 @@ grep -rniE "SigningKey\"\s*:\s*\"[^\"]+" src/   # must print nothing — no keys
 ```
 
 Self-check, report ✅/❌:
-- [ ] Exactly four auth endpoints, each a one-line action on `BaseApiController`
+- [ ] Exactly four auth endpoints, each a one-line action on `BaseApiController` (the password change lives on `UsersController`, which isn't anonymous)
+- [ ] Password change needs the current password, signs out other sessions and keeps this one; the JWT carries `pwd_change=required` only while `MustChangePassword` is true
 - [ ] Refresh token only ever travels in an HttpOnly/Secure/SameSite=Strict cookie and is stored hashed
 - [ ] Rotation and reuse detection implemented and tested
 - [ ] Same error message for unknown email, wrong password and inactive user

@@ -24,4 +24,11 @@ public interface IAuthService
 
     /// <summary><c>POST auth/logout</c>: always 204. Revokes the cookie's token if it is active and clears the cookie. Idempotent.</summary>
     Task<BaseResponse> LogoutAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <c>POST users/me/password</c>: 200 with new tokens and a new refresh cookie, 400 (wrong current
+    /// password, or the new one breaks the policy), 401. Every other session is signed out, and an
+    /// admin-set password stops being temporary (<c>MustChangePassword</c> becomes false).
+    /// </summary>
+    Task<BaseResponse<AuthResponseDto>> ChangePasswordAsync(ChangePasswordDto request, CancellationToken cancellationToken = default);
 }

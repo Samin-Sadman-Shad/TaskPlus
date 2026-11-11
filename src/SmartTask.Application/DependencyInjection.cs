@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<IProjectAccessGuard, ProjectAccessGuard>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IAdminBootstrapService, AdminBootstrapService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<IDashboardService, DashboardService>();

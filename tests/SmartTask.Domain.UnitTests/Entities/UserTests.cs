@@ -56,6 +56,34 @@ public sealed class UserTests
     }
 
     [Fact]
+    public void Create_DoesNotRequirePasswordChange() =>
+        User.Create("Ada", "Lovelace", "ada@example.com", "hash").MustChangePassword.ShouldBeFalse();
+
+    [Fact]
+    public void RequirePasswordChange_ThenChangePasswordHash_ClearsTheFlag()
+    {
+        var user = User.Create("Ada", "Lovelace", "ada@example.com", "temporary-hash");
+
+        user.RequirePasswordChange();
+        user.MustChangePassword.ShouldBeTrue();
+
+        user.ChangePasswordHash("chosen-by-user", Now);
+        user.MustChangePassword.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RehashPassword_KeepsPasswordChangeRequirement()
+    {
+        // A rehash is the same (temporary) password with a stronger hash; it must not count as a change.
+        var user = User.Create("Ada", "Lovelace", "ada@example.com", "temporary-hash");
+        user.RequirePasswordChange();
+
+        user.RehashPassword("stronger-hash-of-same-password");
+
+        user.MustChangePassword.ShouldBeTrue();
+    }
+
+    [Fact]
     public void RehashPassword_ReplacesHashAndKeepsSessions()
     {
         var user = User.Create("Ada", "Lovelace", "ada@example.com", "old-hash");

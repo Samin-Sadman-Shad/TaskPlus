@@ -306,4 +306,84 @@ public sealed class AuthServiceTests
         (await Service().LogoutAsync()).Status.ShouldBe(HttpStatusCode.NoContent);
         await SaveCalled(0);
     }
+
+    // ---- Change password ----------------------------------------------------------------------
+
+    private const string NewPassword = "Brand#New2026";
+
+    private ChangePasswordDto PasswordChange(string? newPassword = null) => new()
+    {
+        CurrentPassword = TestData.ValidPassword,
+        NewPassword = newPassword ?? NewPassword,
+        ConfirmNewPassword = newPassword ?? NewPassword,
+    };
+
+    private void SignedInWithCorrectPassword()
+    {
+        _currentUser.UserId.Returns(_user.Id);
+        _hasher.Verify(_user, _user.PasswordHash, TestData.ValidPassword).Returns(PasswordCheckResult.Success);
+        _hasher.Hash(_user, NewPassword).Returns("new-hash");
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_Correct_SetsHashSignsOutOtherSessionsAndIssuesNewSession()
+    {
+        SignedInWithCorrectPassword();
+        var otherDevice = PresentToken();
+        _user.RequirePasswordChange();
+
+        var response = await Service().ChangePasswordAsync(PasswordChange());
+
+        response.Status.ShouldBe(HttpStatusCode.OK);
+        response.Data!.AccessToken.ShouldBe("access.jwt");
+        response.Data.User.MustChangePassword.ShouldBeFalse();
+        _user.PasswordHash.ShouldBe("new-hash");
+        _user.MustChangePassword.ShouldBeFalse();
+        otherDevice.IsActive(Now).ShouldBeFalse();
+        _user.RefreshTokens.Count(t => t.IsActive(Now)).ShouldBe(1); // only this device's new session
+        _transport.Received(1).Write("next-raw", _next.ExpiresAt);
+        await SaveCalled(1);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WrongCurrentPassword_Returns400OnCurrentPasswordAndChangesNothing()
+    {
+        SignedInWithCorrectPassword();
+        _hasher.Verify(_user, _user.PasswordHash, TestData.ValidPassword).Returns(PasswordCheckResult.Failed);
+
+        var response = await Service().ChangePasswordAsync(PasswordChange());
+
+        response.Status.ShouldBe(HttpStatusCode.BadRequest);
+        response.Errors!.Keys.ShouldBe(["currentPassword"]);
+        _user.PasswordHash.ShouldBe("hash");
+        _transport.DidNotReceive().Write(Arg.Any<string>(), Arg.Any<DateTimeOffset>());
+        await SaveCalled(0);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_NewPasswordContainsEmail_Returns400OnNewPassword()
+    {
+        SignedInWithCorrectPassword();
+        var withEmail = "X#1" + _user.Email.Split('@')[0];
+
+        var response = await Service().ChangePasswordAsync(PasswordChange(withEmail));
+
+        response.Status.ShouldBe(HttpStatusCode.BadRequest);
+        response.Errors!.Keys.ShouldBe(["newPassword"]);
+        await SaveCalled(0);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_Anonymous_Returns401() =>
+        (await Service().ChangePasswordAsync(PasswordChange())).Status.ShouldBe(HttpStatusCode.Unauthorized);
+
+    [Fact]
+    public async Task ChangePasswordAsync_InactiveUser_Returns401()
+    {
+        SignedInWithCorrectPassword();
+        _user.Deactivate();
+
+        (await Service().ChangePasswordAsync(PasswordChange())).Status.ShouldBe(HttpStatusCode.Unauthorized);
+        await SaveCalled(0);
+    }
 }

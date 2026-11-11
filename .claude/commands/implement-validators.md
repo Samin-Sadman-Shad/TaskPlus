@@ -78,6 +78,7 @@ filter can reuse:
 | `RegisterRequestDto.Password` | NotEmpty, length `PasswordMinLength`–`PasswordMaxLength`, ≥1 upper, ≥1 lower, ≥1 digit, ≥1 non-alphanumeric, must not contain the email local-part |
 | `RegisterRequestDto.ConfirmPassword` | `Equal(x => x.Password)` with message "Passwords do not match." |
 | `LoginRequestDto` | Email NotBlank + EmailAddress; Password NotEmpty + ≤ `PasswordMaxLength`. **Do not** apply complexity rules on login (don't reveal policy, don't block legacy passwords). |
+| `ChangePasswordDto` | CurrentPassword NotEmpty; NewPassword `ValidPassword()` and `NotEqual(CurrentPassword)`; ConfirmNewPassword equals NewPassword. The current-password check and the "must not contain the email" rule need the stored user, so `AuthService` does them (`RuleBuilderExtensions.ContainsEmailLocalPart`) |
 
 (Refresh and logout have no request body — the token comes from the HttpOnly cookie — so they have no validator.)
 
@@ -86,6 +87,7 @@ filter can reuse:
 |---|---|
 | `UpdateUserProfileDto` | same name rules as registration |
 | `ChangeUserRoleDto` | `Role` `IsInEnum()` |
+| `CreateUserDto` | the registration rules (names, `ValidEmail`, `ValidPassword`, `NotContainEmailLocalPart`, confirm matches) plus `Role` `IsInEnum()`. Also used by `AdminBootstrapService` to check the `Bootstrap:Admin` settings |
 
 ### Projects
 | DTO / field | Rules |

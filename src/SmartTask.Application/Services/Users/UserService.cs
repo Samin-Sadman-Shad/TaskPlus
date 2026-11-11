@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SmartTask.Application.Common.Exceptions;
 using SmartTask.Application.Common.Models;
 using SmartTask.Application.Common.Responses;
 using SmartTask.Application.Contracts.Identity;
@@ -21,6 +22,7 @@ public sealed class UserService(
     IUnitOfWork unitOfWork,
     IProjectAccessGuard access,
     ICurrentUserService currentUser,
+    IPasswordHasher passwordHasher,
     TimeProvider time,
     ILogger<UserService> logger) : IUserService
 {
@@ -119,6 +121,45 @@ public sealed class UserService(
         return user is null
             ? BaseResponse<UserDto>.NotFound(ResponseMessages.UserNotFound)
             : BaseResponse<UserDto>.Ok(user.ToDto());
+    }
+
+    public Task<BaseResponse<UserDto>> CreateAsync(CreateUserDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        return BusinessErrorHandling.RunAsync(
+            async () =>
+            {
+                if (!access.IsAdmin)
+                {
+                    return Denied<UserDto>(ResponseMessages.AdminOnly);
+                }
+
+                if (await users.EmailExistsAsync(dto.Email, cancellationToken))
+                {
+                    return BaseResponse<UserDto>.Conflict(ResponseMessages.EmailTaken);
+                }
+
+                var user = UserAccountFactory.Create(dto.FirstName, dto.LastName, dto.Email, dto.Password, dto.Role, passwordHasher, time.GetUtcNow());
+                // The admin chose this password, so it is temporary: the user must replace it at first sign-in.
+                user.RequirePasswordChange();
+                await users.AddAsync(user, cancellationToken);
+
+                try
+                {
+                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+                catch (ConflictException)
+                {
+                    // A concurrent request with the same email won; the unique index caught it.
+                    return BaseResponse<UserDto>.Conflict(ResponseMessages.EmailTaken);
+                }
+
+                logger.LogInformation("User {UserId} created with role {Role} by {ActorId}", user.Id, user.Role, currentUser.UserId);
+                return BaseResponse<UserDto>.Created(user.ToDto());
+            },
+            (status, message) => BaseResponse<UserDto>.Fail(status, message),
+            logger);
     }
 
     public Task<BaseResponse<UserDto>> ChangeRoleAsync(Guid id, ChangeUserRoleDto dto, CancellationToken cancellationToken = default)

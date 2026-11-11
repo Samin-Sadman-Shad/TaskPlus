@@ -96,17 +96,23 @@ public static class AiConstraints
 | `Role`            | `UserRole`              | default `TeamMember`                        | R (changed only via admin `ChangeUserRoleDto`) |
 | `IsActive`        | `bool`                  | default `true`                              | R            |
 | `LastLoginAt`     | `DateTimeOffset?`       |                                             | R            |
+| `MustChangePassword` | `bool`               | default `false`; `true` while the password was set by an admin | R            |
 | `RefreshTokens`   | `IReadOnlyCollection<RefreshToken>` | backing field `_refreshTokens`  | —            |
 
 Computed: `FullName => $"{FirstName} {LastName}"` (R).
 
 Behaviour:
 - `static User Create(firstName, lastName, email, passwordHash)` → role `TeamMember`.
+  New accounts with a password and a role (registration, admin-created users, the bootstrap admin,
+  the development seed) go through `Application/Services/Users/UserAccountFactory`, so the
+  create → hash → role sequence exists once.
 - `UpdateProfile(firstName, lastName)`
 - `ChangeRole(UserRole role)`
 - `ChangePasswordHash(string newHash)` → also revokes all active refresh tokens.
 - `Deactivate()` / `Activate()`
 - `RecordLogin(DateTimeOffset at)`
+- `RequirePasswordChange()` → `MustChangePassword = true` (admin-created users). `ChangePasswordHash`
+  clears it; `RehashPassword` (same password, stronger hash) does not.
 - `AddRefreshToken(RefreshToken token)`, `RevokeAllRefreshTokens(DateTimeOffset at, string reason)`
 
 ---
@@ -209,8 +215,10 @@ Allowed status transitions (anything else throws `InvalidStatusTransitionExcepti
 |----------------------------------|-------------------------------------------|
 | `RegisterRequestDto`             | FirstName, LastName, Email, Password, ConfirmPassword |
 | `LoginRequestDto`                | Email, Password                           |
+| `ChangePasswordDto`              | CurrentPassword, NewPassword, ConfirmNewPassword (own password; response is `AuthResponseDto`) |
 | `AuthResponseDto`                | AccessToken, AccessTokenExpiresAt, User (`UserDto`) — the refresh token travels in a cookie, never here |
 | `ChangeUserRoleDto`              | Role (Admin only)                         |
+| `CreateUserDto`                  | FirstName, LastName, Email, Password, ConfirmPassword, Role (Admin only; the only request DTO that may carry a role) |
 | `ImproveDescriptionRequestDto`   | Title (optional context), Description     |
 | `ImproveDescriptionResponseDto`  | OriginalDescription, ImprovedDescription, Suggestions (list) |
 | `DashboardStatsDto`              | TotalProjects, TotalTasks, TasksByStatus, TasksByPriority, CompletedCount, PendingCount, OverdueCount, UpcomingDueTasks |

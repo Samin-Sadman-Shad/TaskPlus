@@ -65,6 +65,23 @@ public static partial class RuleBuilderExtensions
             .WithMessage("{PropertyName} must contain at least one symbol (a character that is not a letter or digit).");
 
     /// <summary>
+    /// The email local part is checked against the password only when it is at least this long.
+    /// Otherwise a short address such as <c>a@example.com</c> would forbid every password containing "a".
+    /// </summary>
+    public const int MinEmailLocalPartLengthToCompare = 3;
+
+    /// <summary>
+    /// The password must not contain the local part of the email that <paramref name="email"/> selects
+    /// (case-insensitive; only for local parts of at least <see cref="MinEmailLocalPartLengthToCompare"/> characters).
+    /// Set the message with <c>WithMessage</c>.
+    /// </summary>
+    public static IRuleBuilderOptions<T, string?> NotContainEmailLocalPart<T>(this IRuleBuilder<T, string?> ruleBuilder, Func<T, string?> email)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+        return ruleBuilder.Must((instance, password) => !ContainsEmailLocalPart(password, email(instance)));
+    }
+
+    /// <summary>
     /// The date must not be earlier than today (UTC) minus <paramref name="toleranceDays"/>. "Today"
     /// is read from <paramref name="timeProvider"/> each time the rule runs, not when the validator is built.
     /// </summary>
@@ -101,6 +118,23 @@ public static partial class RuleBuilderExtensions
         return ruleBuilder
             .Must(value => string.IsNullOrWhiteSpace(value) || allowedFields.Contains(value.Trim()))
             .WithMessage($"{{PropertyName}} must be one of: {allowedList}.");
+    }
+
+    /// <summary>
+    /// Whether <paramref name="password"/> contains the local part of <paramref name="email"/>. Public for
+    /// checks that need the stored email, which the request body doesn't carry (password change).
+    /// </summary>
+    public static bool ContainsEmailLocalPart(string? password, string? email)
+    {
+        if (string.IsNullOrEmpty(password) || string.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        var localPart = email.Trim().Split('@')[0];
+
+        return localPart.Length >= MinEmailLocalPartLengthToCompare
+            && password.Contains(localPart, StringComparison.OrdinalIgnoreCase);
     }
 
     private static DateOnly Today(TimeProvider timeProvider) =>

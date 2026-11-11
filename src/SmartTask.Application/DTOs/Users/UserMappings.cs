@@ -20,6 +20,7 @@ public static class UserMappings
             Role = user.Role,
             IsActive = user.IsActive,
             LastLoginAt = user.LastLoginAt,
+            MustChangePassword = user.MustChangePassword,
             CreatedAt = user.CreatedAt,
         };
     }

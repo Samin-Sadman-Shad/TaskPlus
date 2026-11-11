@@ -1,5 +1,6 @@
 using SmartTask.Application.Common.Models;
 using SmartTask.Domain.Entities;
+using SmartTask.Domain.Enums;
 
 namespace SmartTask.Application.Contracts.Persistence;
 
@@ -9,6 +10,9 @@ public interface IUserRepository : IRepository<User>
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether at least one <b>active</b> user has <paramref name="role"/>. Used by the admin bootstrap.</summary>
+    Task<bool> ActiveUserWithRoleExistsAsync(UserRole role, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads the user (tracked) with only the refresh tokens that are active right now, so

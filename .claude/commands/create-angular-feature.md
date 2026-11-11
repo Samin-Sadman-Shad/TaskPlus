@@ -53,7 +53,7 @@ src/app/
 │   ├── dashboard/              dashboard page, stat cards, charts + dashboard.routes.ts
 │   ├── projects/               list, detail, form dialog, data-access/projects.api.ts + projects.routes.ts
 │   ├── tasks/                  list, detail, form dialog (with "Improve with AI"), data-access/tasks.api.ts + tasks.routes.ts
-│   └── users/                  admin user list, role change + users.routes.ts
+│   └── users/                  admin user list, create user (any role, temporary password), role change + users.routes.ts
 ├── app.routes.ts
 └── app.config.ts
 ```
@@ -94,11 +94,15 @@ src/app/
   1. `authInterceptor` — adds `Authorization: Bearer` to `/api` requests except `/auth/*`
   2. `refreshInterceptor` — on a 401 from a non-auth request, run **one shared** refresh (single
      in-flight observable with `shareReplay`), retry the original request once, and log out on failure
-  3. `errorInterceptor` — shows the `BaseResponse.message` in a snackbar for 403/404/409/429/5xx;
+  3. `errorInterceptor` — on 403 `PASSWORD_CHANGE_REQUIRED` navigate to `/account/change-password`
+     (no snackbar); otherwise shows the `BaseResponse.message` in a snackbar for 403/404/409/429/5xx;
      leaves 400 to the form; never shows raw error objects
   4. `loadingInterceptor` — a global loading signal for the progress bar
 - **Functional guards** (`CanActivateFn` / `CanMatchFn`): `authGuard` (redirects to `/login?returnUrl=`),
-  `guestGuard` (logged-in users skip the login page), and `roleGuard` reading `route.data['roles']`.
+  `guestGuard` (logged-in users skip the login page), `roleGuard` reading `route.data['roles']`, and
+  `passwordChangeGuard`: while `user.mustChangePassword` is true (from login, refresh or `users/me`), every
+  route except `/account/change-password` redirects there. The change-password form posts
+  `ChangePasswordDto` and stores the **new** access token from the response.
 - **Routes** (`app.routes.ts`), all lazy:
   ```ts
   { path: 'login', canMatch: [guestGuard], loadChildren: () => import('./features/auth/auth.routes') },

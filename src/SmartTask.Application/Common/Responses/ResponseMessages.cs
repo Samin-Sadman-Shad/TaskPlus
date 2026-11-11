@@ -18,6 +18,9 @@ public static class ResponseMessages
     public const string InvalidCredentials = "Invalid email or password.";
     public const string EmailTaken = "An account with this email already exists.";
     public const string SessionExpired = "Your session has expired. Please sign in again.";
+    public const string PasswordChangeRequired = "You must change your password before continuing.";
+    public const string CurrentPasswordIncorrect = "The current password is incorrect.";
+    public const string PasswordContainsEmail = "New Password must not contain your email address.";
 
     public const string UserNotFound = "User not found.";
     public const string UserNotFoundOrInactive = "User not found or inactive.";

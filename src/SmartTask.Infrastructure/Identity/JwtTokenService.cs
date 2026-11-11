@@ -20,6 +20,19 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider t
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddMinutes(jwt.AccessTokenMinutes);
 
+        var claims = new Dictionary<string, object>
+        {
+            [AppClaimTypes.Subject] = user.Id.ToString(),
+            [AppClaimTypes.Email] = user.Email,
+            [AppClaimTypes.Name] = user.FullName,
+            [AppClaimTypes.Role] = user.Role.ToString(),
+            [AppClaimTypes.TokenId] = Guid.NewGuid().ToString(),
+        };
+        if (user.MustChangePassword)
+        {
+            claims[AppClaimTypes.PasswordChangeRequired] = AppClaimTypes.PasswordChangeRequiredValue;
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = jwt.Issuer,
@@ -27,14 +40,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider t
             IssuedAt = now.UtcDateTime,
             NotBefore = now.UtcDateTime,
             Expires = expiresAt.UtcDateTime,
-            Claims = new Dictionary<string, object>
-            {
-                [AppClaimTypes.Subject] = user.Id.ToString(),
-                [AppClaimTypes.Email] = user.Email,
-                [AppClaimTypes.Name] = user.FullName,
-                [AppClaimTypes.Role] = user.Role.ToString(),
-                [AppClaimTypes.TokenId] = Guid.NewGuid().ToString(),
-            },
+            Claims = claims,
             SigningCredentials = new SigningCredentials(jwt.CreateSigningKey(), SecurityAlgorithms.HmacSha256),
         };
 

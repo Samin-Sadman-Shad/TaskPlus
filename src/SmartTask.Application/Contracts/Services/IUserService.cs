@@ -16,6 +16,13 @@ public interface IUserService
     /// <summary><c>GET users</c> (admin): 200, 403.</summary>
     Task<BaseResponse<PagedResult<UserDto>>> GetPagedAsync(UserQueryParameters parameters, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// <c>POST users</c> (admin): 201, 400, 403, 409 (email taken). Creates an account with the given role and
+    /// temporary password. The user can sign in, but must change the password (<c>POST users/me/password</c>)
+    /// before any other endpoint works.
+    /// </summary>
+    Task<BaseResponse<UserDto>> CreateAsync(CreateUserDto dto, CancellationToken cancellationToken = default);
+
     /// <summary><c>GET users/lookup?search=</c> (admin, project manager): 200, 403. Active users only, at most <c>PagingConstraints.LookupMaxResults</c>.</summary>
     Task<BaseResponse<IReadOnlyList<UserSummaryDto>>> LookupAsync(string? search, CancellationToken cancellationToken = default);
 

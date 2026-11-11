@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SmartTask.Application.Contracts.Identity;
+using SmartTask.Application.Services.Users;
 using SmartTask.Domain.Entities;
 using SmartTask.Domain.Enums;
 
@@ -68,13 +69,8 @@ public sealed class DevelopmentDataSeeder(
         logger.LogInformation("Development seed created {UserCount} users and 2 projects", created.Count);
     }
 
-    private User CreateUser(SeedUser seed, DateTimeOffset now)
-    {
-        var user = User.Create(seed.FirstName, seed.LastName, seed.Email, "pending");
-        user.ChangePasswordHash(passwordHasher.Hash(user, configuration[seed.PasswordKey]!), now);
-        user.ChangeRole(seed.Role);
-        return user;
-    }
+    private User CreateUser(SeedUser seed, DateTimeOffset now) =>
+        UserAccountFactory.Create(seed.FirstName, seed.LastName, seed.Email, configuration[seed.PasswordKey]!, seed.Role, passwordHasher, now);
 
     private sealed record SeedUser(string PasswordKey, string FirstName, string LastName, string Email, UserRole Role);
 }

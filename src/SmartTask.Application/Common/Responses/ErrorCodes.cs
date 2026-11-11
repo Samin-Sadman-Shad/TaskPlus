@@ -18,6 +18,13 @@ public static class ErrorCodes
     /// <summary>403: the caller's role may not call this endpoint.</summary>
     public const string InsufficientRole = "INSUFFICIENT_ROLE";
 
+    /// <summary>
+    /// 403: an admin set this user's password, so it must be changed first. Only <c>GET users/me</c>,
+    /// <c>POST users/me/password</c> and the auth endpoints work until then. The client should show the
+    /// change-password screen.
+    /// </summary>
+    public const string PasswordChangeRequired = "PASSWORD_CHANGE_REQUIRED";
+
     /// <summary>403: the role is allowed, but not for this particular project or task.</summary>
     public const string ResourceForbidden = "RESOURCE_FORBIDDEN";
 

@@ -16,8 +16,10 @@ public sealed class DependencyInjectionTests
     [
         typeof(RegisterRequestDto),
         typeof(LoginRequestDto),
+        typeof(ChangePasswordDto),
         typeof(UpdateUserProfileDto),
         typeof(ChangeUserRoleDto),
+        typeof(CreateUserDto),
         typeof(CreateProjectDto),
         typeof(UpdateProjectDto),
         typeof(AddProjectMemberDto),

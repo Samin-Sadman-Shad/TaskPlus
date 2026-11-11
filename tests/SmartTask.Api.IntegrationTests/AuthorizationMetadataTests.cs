@@ -62,6 +62,8 @@ public sealed class AuthorizationMetadataTests(SmartTaskApiFactory factory)
     [InlineData(typeof(UsersController), nameof(UsersController.GetPaged), AppRoles.Admin)]
     [InlineData(typeof(UsersController), nameof(UsersController.Lookup), AppRoles.Management)]
     [InlineData(typeof(UsersController), nameof(UsersController.ChangeRole), AppRoles.Admin)]
+    [InlineData(typeof(UsersController), nameof(UsersController.Create), AppRoles.Admin)]
+    [InlineData(typeof(UsersController), nameof(UsersController.ChangePassword), null)]
     [InlineData(typeof(ProjectsController), nameof(ProjectsController.Create), AppRoles.Management)]
     [InlineData(typeof(TasksController), nameof(TasksController.Assign), AppRoles.Management)]
     [InlineData(typeof(TasksController), nameof(TasksController.UpdateStatus), null)]
@@ -108,5 +110,20 @@ public sealed class AuthorizationMetadataTests(SmartTaskApiFactory factory)
         context.Response.Body.Position = 0;
         var json = await JsonDocument.ParseAsync(context.Response.Body);
         json.RootElement.GetProperty("errorCode").GetString().ShouldBe(ErrorCodes.InsufficientRole);
+    }
+
+    [Fact]
+    public void OnlyProfileAndPasswordChange_AreAllowedWhilePasswordChangeRequired()
+    {
+        var allowed = typeof(BaseApiController).Assembly.GetTypes()
+            .Where(t => t.IsSubclassOf(typeof(BaseApiController)))
+            .SelectMany(t => t.GetMethods().Select(m => (Controller: t, Action: m)))
+            .Where(x => x.Action.GetCustomAttribute<AllowedWhilePasswordChangeRequiredAttribute>() is not null
+                || x.Controller.GetCustomAttribute<AllowedWhilePasswordChangeRequiredAttribute>() is not null)
+            .Select(x => $"{x.Controller.Name}.{x.Action.Name}")
+            .Distinct()
+            .Order(StringComparer.Ordinal);
+
+        allowed.ShouldBe(["UsersController.ChangePassword", "UsersController.GetCurrent"]);
     }
 }

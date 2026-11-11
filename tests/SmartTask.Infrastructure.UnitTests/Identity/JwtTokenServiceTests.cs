@@ -37,6 +37,24 @@ public sealed class JwtTokenServiceTests
     }
 
     [Fact]
+    public void CreateAccessToken_NormalUser_HasNoPasswordChangeClaim()
+    {
+        var token = new JsonWebToken(Service().CreateAccessToken(_user).Token);
+
+        token.TryGetClaim(AppClaimTypes.PasswordChangeRequired, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void CreateAccessToken_UserWithTemporaryPassword_CarriesPasswordChangeClaim()
+    {
+        _user.RequirePasswordChange();
+
+        var token = new JsonWebToken(Service().CreateAccessToken(_user).Token);
+
+        token.GetClaim(AppClaimTypes.PasswordChangeRequired).Value.ShouldBe(AppClaimTypes.PasswordChangeRequiredValue);
+    }
+
+    [Fact]
     public void CreateAccessToken_UsesConfiguredLifetime()
     {
         var result = Service().CreateAccessToken(_user);
