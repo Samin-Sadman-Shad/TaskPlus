@@ -75,6 +75,9 @@ services:
       ASPNETCORE_HTTPS_PORT: "${API_HTTPS_PORT:-7180}"   # host port: the HTTP→HTTPS redirect must point where the browser can reach
       ASPNETCORE_Kestrel__Certificates__Default__Path: /https/smarttask-api.pfx
       ASPNETCORE_Kestrel__Certificates__Default__Password: ${CERT_PASSWORD:?set CERT_PASSWORD in .env}
+      # Built from .env so the login and database always match what sqlserver-init created.
+      # The password is added separately (Database__Password) and never appears in the string.
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=${APP_DB_NAME:-SmartTaskDb};User Id=${APP_DB_USER};Encrypt=True;TrustServerCertificate=True"
       Database__Password: ${APP_DB_PASSWORD}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
       Ai__ApiKey: ${AI_API_KEY:-}

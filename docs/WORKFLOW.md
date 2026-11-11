@@ -80,6 +80,10 @@ Commands are written to be **idempotent**: they update existing files rather tha
 
 Prerequisite: **Docker Desktop** (WSL 2 backend) running. `docker ps` must print a table, not an error.
 
+> **Shortcut:** `./scripts/start.ps1` (or `./scripts/start.sh`) does steps 1–4 for you. It generates `.env` with
+> random secrets and a first Admin (only if `.env` is missing), creates the data folders and the certificate, and
+> starts everything. The manual steps below are for choosing your own values.
+
 1. **Settings.** Copy `.env.example` to `.env` and fill in every `<generated>` value with a long random
    string (`.env` is git-ignored; never commit it). `SQLSERVER_DATA_DIR` is where the database files go.
 2. **Certificate** for HTTPS in the container (once per machine; use the `CERT_PASSWORD` from `.env`):

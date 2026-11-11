@@ -228,12 +228,28 @@ All `dotnet` commands run from the repository root.
 
 ### Run everything with Docker
 
-One command starts SQL Server, the database bootstrap, the API and the Angular client:
+One command starts SQL Server, the database bootstrap, the API and the Angular client, with no setup and
+nothing to type. Only Docker Desktop has to be running.
 
-```bash
-cp .env.example .env      # once: fill in every value; generate strong random secrets
-docker compose up -d --build
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1    # Windows (works under the default execution policy)
 ```
+```bash
+./scripts/start.sh         # macOS / Linux / Git Bash
+```
+
+On the first run the script:
+
+1. creates `.env` with strong random secrets (SA and app database passwords, JWT signing key, certificate
+   password) and a first Admin `admin@smarttask.local` with a generated password, which it prints once.
+   It is also kept in `.env` as `BOOTSTRAP_ADMIN_PASSWORD`;
+2. creates the SQL Server data folders (`~/.smarttask/sqlserver-data`) and the API's HTTPS certificate
+   (`~/.aspnet/https/smarttask-api.pfx`, via `dotnet dev-certs`, or OpenSSL in a container without the .NET SDK);
+3. runs `docker compose up -d --build` and waits until the API and the web app answer.
+
+It never changes an existing `.env`, and it skips anything that already exists, so it is safe to run every time.
+Nothing secret is committed: `.env` is git-ignored. After the first run, `docker compose up -d --build` on its
+own works too. To choose your own values, copy `.env.example` to `.env` and edit it before the first run.
 
 | Container | What it does | URL |
 |---|---|---|

@@ -27,6 +27,26 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Open questions / follow-ups: …
 -->
 
+### 2026-11-11 — Zero-input start: scripts/start.ps1 and scripts/start.sh
+- User's choice: a setup script (not committed defaults), so no secrets go into git (CLAUDE.md rule 7).
+- Created `scripts/start.ps1` (Windows PowerShell 5.1+) and `scripts/start.sh` (bash; executable bit set in git).
+  If `.env` is missing they generate it with cryptographically random values (PowerShell: `RandomNumberGenerator`
+  with rejection sampling; bash: `/dev/urandom`): SA and app database passwords, JWT key (64), certificate password,
+  and a first Admin `admin@smarttask.local` whose password is printed once and kept in `.env`. Passwords use letters,
+  digits and `-` only (safe in `.env`, compose and `sqlcmd`) and meet the SQL Server and app policies. The scripts then
+  create the data folders and the certificate (`dotnet dev-certs`, or OpenSSL in an `alpine` container without the
+  SDK), run `docker compose up -d --build`, and wait for `/health/ready` and the web `/healthz`. An existing `.env` is
+  never modified; existing folders and certificates are skipped.
+- Fixed: `appsettings.Docker.json` hardcoded the database user (`User Id=Samin`) and name, so a different
+  `APP_DB_USER` couldn't connect. Compose now sets `ConnectionStrings__DefaultConnection` from `APP_DB_NAME` /
+  `APP_DB_USER` (the password still comes separately through `Database__Password`).
+- `.env.example`: points to the scripts; generic `APP_DB_USER=smarttask_app` and a placeholder data folder.
+- Verified: both scripts run in isolated temp copies (docker/curl stubbed, profile redirected). The generated `.env`
+  has no BOM, passes `docker compose config`, and has passwords meeting every policy; data folders and certificate are
+  created; a second run keeps `.env`. With the real `.env`, the recreated API is healthy with the compose-built
+  connection string.
+- Not run end to end on a completely fresh machine (it would replace the running stack's containers).
+
 ### 2026-11-11 — Web client container: whole stack with one `docker compose up`
 - Created: `client/smart-task-web/Dockerfile` (Node 24 build → `nginxinc/nginx-unprivileged:1.29-alpine`, health
   check on `/healthz`), `client/smart-task-web/nginx/default.conf` (SPA fallback; `/api/` → `https://api:8081` inside
