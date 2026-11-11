@@ -30,6 +30,15 @@ sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('SmartTask') IS NULL CREATE DATA
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d SmartTask -i database/SmartTask.sql
 ```
 
+**SQL script in SQL Server Management Studio (SSMS):**
+
+1. Connect to the server and run `IF DB_ID(N'SmartTask') IS NULL CREATE DATABASE [SmartTask];` in a new query.
+2. Open `database/SmartTask.sql` (**File → Open → File**).
+3. Choose `SmartTask` in the database drop-down on the toolbar (not `master`) and press **Execute** (F5).
+
+The full walkthrough, including an application login and the connection string, is in the root
+[README](../README.md#use-sql-server-and-ssms-without-docker).
+
 The API can also apply migrations itself at start-up: set `Database:ApplyMigrationsOnStartup=true`. This is
 on by default inside Docker.
 

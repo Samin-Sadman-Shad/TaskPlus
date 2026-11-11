@@ -152,7 +152,8 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DOMAIN-MODEL.md
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
 - [Node.js](https://nodejs.org/) LTS (developed with Node 24, npm 11)
 - SQL Server: **LocalDB** (installed with Visual Studio) for the default connection string, or any SQL
-  Server instance, or Docker (see [Run everything with Docker](#run-everything-with-docker))
+  Server instance managed with SSMS (see [Use SQL Server and SSMS](#use-sql-server-and-ssms-without-docker)),
+  or Docker (see [Run everything with Docker](#run-everything-with-docker))
 - The EF Core tool, restored from `dotnet-tools.json`: `dotnet tool restore`
 
 ### Steps (local development)
@@ -226,6 +227,88 @@ All `dotnet` commands run from the repository root.
    `manager@smarttask.local` and `member@smarttask.local`, with the passwords you set in step 2.
    Otherwise register a TeamMember account, or configure a first Admin (see [Configuration](#5-configuration)).
 
+### Use SQL Server and SSMS (without Docker)
+
+Use this when you build and run the API and the client yourself against a SQL Server instance that you
+manage with SQL Server Management Studio (SSMS), instead of LocalDB or the Docker containers.
+
+**Prerequisites:** SQL Server 2019 or later (Developer or Express edition is enough), SSMS, and the tools from
+[Prerequisites](#prerequisites). Note the server name you connect to in SSMS, for example `localhost`
+(default instance) or `localhost\SQLEXPRESS` (named instance).
+
+1. **Create an empty database.** In SSMS connect to the server, open **New Query** and run:
+
+   ```sql
+   IF DB_ID(N'SmartTask') IS NULL CREATE DATABASE [SmartTask];
+   ```
+
+2. **Create the schema.** Use **one** of these; both produce the same tables.
+
+   - *SQL script in SSMS:* open [database/SmartTask.sql](database/SmartTask.sql) (**File → Open → File**),
+     choose `SmartTask` in the database drop-down on the toolbar, and press **Execute** (F5). The script is
+     idempotent, so running it again is safe. It does not create the database, which is why step 1 comes first.
+   - *EF Core migrations:* set the connection string first (step 4), then run
+     `dotnet ef database update -p src/SmartTask.Persistence -s src/SmartTask.Api`.
+
+   In SSMS, refresh **Databases → SmartTask → Tables**. You should see `Users`, `RefreshTokens`, `Projects`,
+   `ProjectMembers`, `TaskItems` and `__EFMigrationsHistory`.
+
+3. **Choose how the API signs in to SQL Server.**
+
+   - *Windows authentication* (simplest on your own machine): nothing to create. The API connects as your
+     Windows account, which already has access if you created the database.
+   - *SQL Server authentication:* create a login for the application. Mixed-mode authentication must be on
+     (server **Properties → Security → SQL Server and Windows Authentication mode**, then restart the service).
+
+     ```sql
+     CREATE LOGIN [smarttask_app] WITH PASSWORD = N'<strong password>', CHECK_POLICY = ON;
+     USE [SmartTask];
+     CREATE USER [smarttask_app] FOR LOGIN [smarttask_app];
+     ALTER ROLE db_datareader ADD MEMBER [smarttask_app];
+     ALTER ROLE db_datawriter ADD MEMBER [smarttask_app];
+     -- Only if this login also applies migrations (dotnet ef or Database:ApplyMigrationsOnStartup):
+     ALTER ROLE db_ddladmin   ADD MEMBER [smarttask_app];
+     ```
+
+4. **Point the API at the database** with user-secrets, so no connection string or password is stored in
+   the repository. Keep the password out of the connection string: `Database:Password` is added to it at
+   start-up.
+
+   ```bash
+   # Windows authentication
+   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=SmartTask;Trusted_Connection=True;TrustServerCertificate=True" -p src/SmartTask.Api
+
+   # SQL Server authentication
+   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=SmartTask;User Id=smarttask_app;TrustServerCertificate=True" -p src/SmartTask.Api
+   dotnet user-secrets set "Database:Password" "<strong password>" -p src/SmartTask.Api
+   ```
+
+   Replace `localhost` with your server name (for a named instance, `localhost\SQLEXPRESS`).
+   `TrustServerCertificate=True` accepts SQL Server's self-signed certificate. Leave it out when the server
+   has a trusted certificate. Also set `Jwt:SigningKey` and any optional secrets from step 2 of
+   [Steps (local development)](#steps-local-development).
+
+5. **Build and run the API.**
+
+   ```bash
+   dotnet build SmartTask.slnx
+   dotnet run --project src/SmartTask.Api --launch-profile https
+   ```
+
+   Check <https://localhost:7180/health/ready>: it returns `Healthy` when the database is reachable, and
+   503 when it isn't. The API applies pending migrations at start-up only when `Database:ApplyMigrationsOnStartup`
+   is `true` (or when `Seed:Enabled` is on in Development). Otherwise run step 2 again after pulling new
+   migrations: regenerate the script or run `dotnet ef database update`.
+
+6. **Build and run the client** as in step 6 above (`npm ci && npm start`), or build it for deployment
+   with `npm run build`. The output goes to `client/smart-task-web/dist/`.
+
+7. **Sign in.** Register a TeamMember, or configure a first Admin with `Bootstrap:Admin:*` (see
+   [First Admin](#first-admin)). Users and projects can then be checked in SSMS, for example
+   `SELECT Email, Role, IsActive FROM dbo.Users;` (`Role`: 1 = Admin, 2 = ProjectManager, 3 = TeamMember).
+   Change roles through the API (`PATCH users/{id}/role`), not by editing the table: the role is also in the
+   user's access token, so an edited row doesn't take effect until the next sign-in or token refresh.
+
 ### Run everything with Docker
 
 One command starts SQL Server, the database bootstrap, the API and the Angular client, with no setup and
@@ -278,6 +361,11 @@ data-folder setup: [docs/WORKFLOW.md](docs/WORKFLOW.md#run-with-docker).
 | API exits with `Jwt:SigningKey must be at least 32 bytes` | Set `Jwt:SigningKey` (step 2) or the `Jwt__SigningKey` environment variable. |
 | CORS error in the browser | Only needed when the client calls the API directly (not through the proxy). Add the client's origin to `Cors:AllowedOrigins`. |
 | `A network-related or instance-specific error` | Check that LocalDB is running (`sqllocaldb start MSSQLLocalDB`) or fix the connection string. `/health/ready` returns 503 while the database is unreachable. |
+| `Login failed for user 'smarttask_app'` | SQL Server authentication is off (enable mixed mode and restart the service), the password in `Database:Password` is wrong, or the login has no user in `SmartTask`. |
+| `Cannot open database "SmartTask"` | The database doesn't exist yet (SSMS step 1), or the login has no user in it (step 3). |
+| `The certificate chain was issued by an authority that is not trusted` | Add `TrustServerCertificate=True` to the connection string, or install a trusted certificate on SQL Server. |
+| Can't reach a named instance (`localhost\SQLEXPRESS`) | Start the **SQL Server Browser** service, or enable TCP/IP in SQL Server Configuration Manager and use `localhost,<port>`. |
+| `Invalid object name 'Users'` | The schema wasn't created: run `database/SmartTask.sql` against the `SmartTask` database (not `master`), or run `dotnet ef database update`. |
 | Signed out after every page reload | The refresh cookie is `Secure` and scoped to `/api/v1/auth`. Use the proxy on `http://localhost:4200`, or HTTPS when calling the API directly. |
 | 429 Too Many Requests on login, or signed out after several reloads | The `auth` rate limit allows 5 requests per minute per IP, and it includes the refresh call made on every page load. Wait a minute. |
 | `address already in use` on port 4200 | Something else (often `npm start`) uses 4200. Stop it, or set `WEB_PORT` in `.env` (e.g. `4280`). |
@@ -525,7 +613,7 @@ npm run build
 | SmartTask.Domain.UnitTests | 58 | Entity invariants, status transitions, membership, refresh-token rules |
 | SmartTask.Application.UnitTests | 357 | Every service (permissions, outcomes, status codes) and every validator |
 | SmartTask.Infrastructure.UnitTests | 60 | JWT creation, password hashing, AI client parsing and failure mapping, no secrets in logs |
-| SmartTask.Api.IntegrationTests | 78 | The real pipeline over HTTP: auth flow and cookies, role and resource rules, error codes, validation, rate limits, temporary-password flow |
+| SmartTask.Api.IntegrationTests | 86 | The real pipeline over HTTP: auth flow and cookies, role and resource rules, error codes, validation, rate limits, temporary-password flow, forwarded headers, client IP |
 | Angular (Vitest) | 46 | Guards, refresh interceptor (one refresh for parallel 401s, retry, sign-out), session restore, form validators and server-error mapping, data-access URLs, route behaviour |
 | **Total** | **599** | |
 
