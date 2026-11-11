@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SmartTask.Application.Contracts.Services;
+using SmartTask.Application.Services.Ai;
 using SmartTask.Application.Services.Auth;
 using SmartTask.Application.Services.Authorization;
 using SmartTask.Application.Services.Dashboard;
@@ -29,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<IAiService, AiService>();
 
         return services;
     }

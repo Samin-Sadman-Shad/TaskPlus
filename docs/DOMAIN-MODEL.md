@@ -75,6 +75,9 @@ public static class AiConstraints
 {
     public const int InputMinLength = 3;
     public const int InputMaxLength = 2000;
+    public const int OutputTargetLength  = 1200; // asked for in the prompt; hard cap is TaskItemConstraints.DescriptionMaxLength
+    public const int MaxSuggestions      = 3;
+    public const int SuggestionMaxLength = 200;
 }
 ```
 

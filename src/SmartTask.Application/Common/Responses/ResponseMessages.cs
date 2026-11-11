@@ -30,4 +30,8 @@ public static class ResponseMessages
     public const string TaskModifyForbidden = "You do not have permission to modify this task.";
     public const string TaskStatusForbidden = "You can only change the status of tasks assigned to you.";
     public const string AssigneeNotMember = "Assignee must be a member of the project.";
+
+    public const string AiUnavailable = "The AI service is currently unavailable. Please try again later.";
+    public const string AiBusy = "AI service is busy, try again shortly.";
+    public const string AiInvalidResponse = "The AI service returned an unusable response. Please try again.";
 }

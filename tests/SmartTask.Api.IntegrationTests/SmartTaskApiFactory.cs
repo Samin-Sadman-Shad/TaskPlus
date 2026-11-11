@@ -57,6 +57,8 @@ public sealed class SmartTaskApiFactory : WebApplicationFactory<Program>, IAsync
         builder.UseSetting("Swagger:Enabled", "true");
         builder.UseSetting("RateLimiting:Auth:PermitLimit", "1000");
         builder.UseSetting("RateLimiting:Global:PermitLimit", "1000");
+        // Deterministic, offline AI provider; never call a real model from tests.
+        builder.UseSetting("Ai:Provider", "Fake");
         // Keep test log files out of the source tree.
         builder.UseSetting("Serilog:WriteTo:1:Args:path", Path.Combine(_logDirectory, "test-.log"));
 

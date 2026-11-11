@@ -11,6 +11,7 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 | 5    | `/create-features`      | Done        | Users, Projects, Tasks, Dashboard | Tests verified later (2 failures found and fixed in `1b6be76`) |
 | 6    | `/implement-auth`       | Done        | all   | Build ✅; Tests ✅ (353 = 55 Domain + 276 Application + 22 Infrastructure); HTTP end-to-end on LocalDB ✅ |
 | 7    | `/create-api`           | Done        | all (AiController pending /implement-ai) | Build ✅; Tests ✅ (382, +29 API integration); InitialCreate migration applied to LocalDB; /swagger and /health/ready ✅ |
+| 8    | `/implement-ai`         | Done        | all   | Build ✅; Tests ✅ (457 = 55 Domain + 309 Application + 58 Infrastructure + 35 API); smoke run on LocalDB with the fake provider ✅; secret grep clean |
 
 ## Log
 
@@ -21,6 +22,38 @@ Updated by each Claude Code command when it finishes. Newest entry first.
 - Build: ✅ / Tests: ✅ (n passed)
 - Open questions / follow-ups: …
 -->
+
+### 2026-11-11 — /implement-ai
+- Endpoint `POST api/v1/ai/task-descriptions/improve` (`AiController`, one line, `ai` rate-limit policy, which already existed from /create-api;
+  input validated by the existing `ImproveDescriptionRequestDtoValidator` through `ValidationFilter`). Nothing is persisted.
+- Domain: `AiConstraints` + `OutputTargetLength` (1200), `MaxSuggestions` (3), `SuggestionMaxLength` (200); DOMAIN-MODEL.md updated.
+- Application:
+  - `Contracts/Ai/`: `ITaskDescriptionImprover` (Strategy port), `TaskDescriptionPromptInput`, `ImprovedDescriptionResult`,
+    `AiFailureReason`, `AiProviderException`; `Contracts/Services/IAiService`.
+  - `Services/Ai/Prompts/TaskDescriptionPrompt` (version `v1`, system message, `<task>` user template, `<`/`>` escaping),
+    `Services/Ai/AiService` (provider failures → 502/503, JSON parse + one `{…}` extraction retry, length / blank / prompt-echo checks,
+    suggestions cleaned and capped), `Services/Ai/AiOutputSanitizer` (entity decode → tag strip → line endings → trim).
+  - New `ResponseMessages`: `AiUnavailable`, `AiBusy`, `AiInvalidResponse`. `AiService` registered in `AddApplication()`.
+- Infrastructure `Ai/`: `AiOptions` (+ `AiOptionsValidator`, ValidateOnStart), `AiProvider`, `AiProviderSelection`, `AiProviderStartupLogger`
+  (hosted service; warning when GitHubModels has no key), `GitHubModelsTaskDescriptionImprover` (Microsoft.Extensions.AI `IChatClient` over the
+  OpenAI SDK, keyed singleton; JSON response format; linked-CTS timeout; SDK retry policy with 2 retries; exceptions → `AiProviderException`),
+  `FakeTaskDescriptionImprover` (deterministic). Packages: Microsoft.Extensions.AI.OpenAI 11.0.0 (OpenAI 2.14.0),
+  Microsoft.Extensions.Hosting.Abstractions 10.0.14. `InternalsVisibleTo` for the Infrastructure unit tests.
+- Api: `appsettings.json` `Ai` section (no key). Integration test host forces `Ai:Provider=Fake`.
+- PROMPTS.md (repo root): all six sections. The model examples are illustrative; the fake-provider example is real output.
+- Tests: +33 Application (`AiServiceTests`, `TaskDescriptionPromptTests`, including a no-text-in-logs test), +36 Infrastructure
+  (provider against a stub HTTP handler through the real SDK pipeline: wire request, 429 retry, error mapping, timeout, cancellation;
+  fake determinism; options validator; provider selection and the startup warning), +6 API integration (401, 200, 400, per-user 429).
+- Smoke run (Development, LocalDB, JWT key from a process env var, no AI key): startup warning logged, endpoint 200 / 400, log line has only
+  metadata. It left one `smoke-…@example.com` TeamMember in the local DB.
+- Decisions:
+  - `AiProviderException` and `AiFailureReason` are in Application/Contracts/Ai, not Infrastructure as the command sketch shows: `AiService` catches
+    the exception, and Application may not reference Infrastructure.
+  - `TaskDescriptionPrompt.SystemMessage` is `static readonly`, not `const`, so the limits it states come from `AiConstraints` (no magic numbers).
+  - Resilience uses the OpenAI SDK's own retry pipeline (it isn't a typed `HttpClient`, so `AddStandardResilienceHandler` doesn't apply).
+  - Over-long or blank suggestions are dropped rather than failing the call; an over-long description fails (502).
+  - Provider 401/403/400 map to `Unavailable` (503); the HTTP status is logged for diagnosis.
+- Open: real model outputs in PROMPTS.md need an `Ai:ApiKey` (/write-docs). The Angular UI should tell users that the text goes to a third-party provider.
 
 ### 2026-11-11 — /create-api (all)
 - Controllers (one-line actions on `BaseApiController`, only the service interface injected, XML summaries,
